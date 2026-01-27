@@ -1,0 +1,18 @@
+# Node modules
+node_modules/
+
+# Build output (keep for Obsidian to load)
+# main.js
+
+# Plugin data (contains API token!)
+data.json
+
+# npm
+package-lock.json
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store

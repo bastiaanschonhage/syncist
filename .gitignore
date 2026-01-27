@@ -1,0 +1,15 @@
+TestVault/.obsidian/plugins/obsidian-sample-plugin/
+TestVault/.obsidian/plugins/hot-reload/
+TestVault/.obsidian/plugins/obsidian-tasks-plugin/
+
+# Obsidian config files
+TestVault/.obsidian/*.json
+
+# Plugin data files (may contain API tokens!)
+TestVault/.obsidian/plugins/*/data.json
+
+# Test vault content (user notes)
+TestVault/*.md
+
+# OS files
+.DS_Store

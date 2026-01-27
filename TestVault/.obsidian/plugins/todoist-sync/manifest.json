@@ -1,0 +1,10 @@
+{
+  "id": "todoist-sync",
+  "name": "Todoist Sync",
+  "version": "1.0.0",
+  "minAppVersion": "0.16.0",
+  "description": "Bidirectional sync between Obsidian tasks and Todoist. Tag tasks with #todoist to sync them automatically.",
+  "author": "Todoist Sync Plugin",
+  "authorUrl": "https://github.com/todoist-sync",
+  "isDesktopOnly": false
+}
