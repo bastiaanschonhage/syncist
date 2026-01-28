@@ -9830,7 +9830,11 @@ var SyncEngine = class {
       if (!trimmed) {
         return { success: false, message: "Cannot create task from empty line." };
       }
-      content = trimmed + " " + this.settings.syncTag;
+      let cleanedContent = trimmed.replace(/^[-*+]\s+/, "").replace(/^\d+\.\s+/, "").trim();
+      if (!cleanedContent) {
+        return { success: false, message: "Cannot create task from empty bullet." };
+      }
+      content = cleanedContent + " " + this.settings.syncTag;
       prefix = (_b = (_a = lineContent.match(/^(\s*)/)) == null ? void 0 : _a[1]) != null ? _b : "";
     }
     const cleanContent = content.replace(new RegExp(this.settings.syncTag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "").replace(/#[a-zA-Z0-9_-]+/g, "").replace(/📅\s*\d{4}-\d{2}-\d{2}/g, "").replace(/⏫|🔼|🔽/g, "").replace(/\s+/g, " ").trim();

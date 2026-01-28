@@ -477,7 +477,18 @@ export class SyncEngine {
       if (!trimmed) {
         return { success: false, message: 'Cannot create task from empty line.' };
       }
-      content = trimmed + ' ' + this.settings.syncTag;
+      
+      // Remove bullet points (-, *, +) or numbered list markers (1., 2., etc.)
+      let cleanedContent = trimmed
+        .replace(/^[-*+]\s+/, '')           // Remove -, *, + bullets
+        .replace(/^\d+\.\s+/, '')           // Remove numbered list markers
+        .trim();
+      
+      if (!cleanedContent) {
+        return { success: false, message: 'Cannot create task from empty bullet.' };
+      }
+      
+      content = cleanedContent + ' ' + this.settings.syncTag;
       prefix = lineContent.match(/^(\s*)/)?.[1] ?? '';
     }
 
