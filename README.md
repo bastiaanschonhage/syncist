@@ -1,8 +1,10 @@
-# Todoist Sync - Obsidian Plugin
+# Syncist (Todoist Sync) - Obsidian Plugin
+
+> **100% coded by AI** - Built entirely with Claude Opus 4.5, guided by Context7 documentation
 
 ### Summary
 With this plugin it is possible to create `Todoist` tasks from `Obsidian` and keep them in sync bidirectionally.
-It's usage is very simple after the plugin has been connected to your Todoist account.
+Its usage is very simple after the plugin has been connected to your Todoist account.
 When you add the `#todoist` tag to a task (or checkbox item) it will automatically be created on Todoist and from that moment onward, the Todoist and Obsidian task will be synced.
 
 ### Features
@@ -11,6 +13,7 @@ When you add the `#todoist` tag to a task (or checkbox item) it will automatical
 - **Configurable**: Customize sync tag, default project, sync interval, and conflict resolution
 - **Commands**: Quick commands to create tasks and trigger sync
 - **Conflict Resolution**: Choose how to handle conflicts (Obsidian wins, Todoist wins, or ask)
+- **AI-Crafted**: 100% coded by AI using modern best practices
 
 ### Installation
 
@@ -18,11 +21,11 @@ When you add the `#todoist` tag to a task (or checkbox item) it will automatical
 1. Clone this repository
 2. Open the `TestVault` folder in Obsidian
 3. Enable Community plugins in Settings → Community plugins
-4. Enable the "Todoist Sync" plugin
+4. Enable the "Syncist (Todoist Sync)" plugin
 5. Configure your Todoist API token in the plugin settings
 
 #### Manual Installation
-1. Copy the `TestVault/.obsidian/plugins/todoist-sync` folder to your vault's `.obsidian/plugins/` directory
+1. Copy the `TestVault/.obsidian/plugins/syncist-todoist-sync` folder to your vault's `.obsidian/plugins/` directory
 2. Make sure to include: `main.js`, `manifest.json`
 3. Enable the plugin in Obsidian settings
 
@@ -69,14 +72,17 @@ After sync, the task will have a Todoist ID:
 
 To build the plugin from source:
 ```bash
-cd TestVault/.obsidian/plugins/todoist-sync
+cd TestVault/.obsidian/plugins/syncist-todoist-sync
 npm install
 npm run build
 ```
 
-### Notes
-- The code has been created using `Claude Opus 4.5`
-- For a good integration with both the Todoist and Obsidian APIs/SDKs the agent has been instructed by `Context7`
+### About This Plugin
+
+This plugin is **100% coded by AI**:
+- Built entirely using `Claude Opus 4.5` in Cursor IDE
+- API integration guided by `Context7` MCP for up-to-date Todoist and Obsidian documentation
+- No human-written code - demonstrating the capabilities of AI-assisted development
 
 ### Finally
-If you like this plugin, please give me a star on `GitHub` and in `Obsidian`
+If you like this plugin, please give it a star on `GitHub` and in `Obsidian`!

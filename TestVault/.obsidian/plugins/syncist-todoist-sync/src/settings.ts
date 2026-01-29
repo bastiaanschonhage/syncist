@@ -19,7 +19,7 @@ export class TodoistSyncSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl('h2', { text: 'Todoist Sync Settings' });
+    containerEl.createEl('h2', { text: 'Syncist Settings' });
 
     // API Token Setting
     new Setting(containerEl)

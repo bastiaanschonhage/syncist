@@ -1,7 +1,7 @@
 {
-  "name": "todoist-sync",
+  "name": "syncist-todoist-sync",
   "version": "1.0.0",
-  "description": "Bidirectional sync between Obsidian tasks and Todoist",
+  "description": "Bidirectional sync between Obsidian tasks and Todoist. 100% coded by AI.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",

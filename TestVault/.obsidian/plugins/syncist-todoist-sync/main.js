@@ -8909,7 +8909,7 @@ var TodoistSyncSettingTab = class extends import_obsidian.PluginSettingTab {
   async display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "Todoist Sync Settings" });
+    containerEl.createEl("h2", { text: "Syncist Settings" });
     new import_obsidian.Setting(containerEl).setName("Todoist API Token").setDesc("Your Todoist API token. Find it in Todoist Settings \u2192 Integrations \u2192 Developer.").addText((text) => {
       text.setPlaceholder("Enter your API token").setValue(this.plugin.settings.apiToken).onChange(async (value) => {
         this.plugin.settings.apiToken = value;
@@ -9896,7 +9896,7 @@ var TodoistSyncPlugin = class extends import_obsidian3.Plugin {
     this.statusBarItem = null;
   }
   async onload() {
-    console.log("Loading Todoist Sync plugin...");
+    console.log("Loading Syncist plugin...");
     await this.loadSettings();
     await this.loadSyncState();
     this.todoistService = new TodoistService();
@@ -9914,10 +9914,10 @@ var TodoistSyncPlugin = class extends import_obsidian3.Plugin {
     this.updateStatusBar();
     this.registerCommands();
     this.startSyncInterval();
-    console.log("Todoist Sync plugin loaded");
+    console.log("Syncist plugin loaded");
   }
   onunload() {
-    console.log("Unloading Todoist Sync plugin...");
+    console.log("Unloading Syncist plugin...");
     if (this.syncIntervalId !== null) {
       window.clearInterval(this.syncIntervalId);
       this.syncIntervalId = null;

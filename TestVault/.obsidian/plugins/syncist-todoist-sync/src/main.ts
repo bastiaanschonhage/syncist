@@ -24,7 +24,7 @@ export default class TodoistSyncPlugin extends Plugin {
   private statusBarItem: HTMLElement | null = null;
 
   async onload(): Promise<void> {
-    console.log('Loading Todoist Sync plugin...');
+    console.log('Loading Syncist plugin...');
 
     // Load settings and sync state
     await this.loadSettings();
@@ -57,11 +57,11 @@ export default class TodoistSyncPlugin extends Plugin {
     // Start sync interval
     this.startSyncInterval();
 
-    console.log('Todoist Sync plugin loaded');
+    console.log('Syncist plugin loaded');
   }
 
   onunload(): void {
-    console.log('Unloading Todoist Sync plugin...');
+    console.log('Unloading Syncist plugin...');
     
     // Stop sync interval
     if (this.syncIntervalId !== null) {
