@@ -1,15 +1,18 @@
-TestVault/.obsidian/plugins/obsidian-sample-plugin/
-TestVault/.obsidian/plugins/hot-reload/
-TestVault/.obsidian/plugins/obsidian-tasks-plugin/
+# Node modules
+node_modules/
 
-# Obsidian config files
-TestVault/.obsidian/*.json
+# npm
+package-lock.json
 
-# Plugin data files (may contain API tokens!)
-TestVault/.obsidian/plugins/*/data.json
+# IDE
+.idea/
+.vscode/
 
-# Test vault content (user notes)
-TestVault/*.md
-
-# OS files
+# OS
 .DS_Store
+
+# Plugin data (contains API token!)
+data.json
+
+# Test vault (local development only)
+TestVault/

@@ -4007,7 +4007,7 @@ var require_axios = __commonJS({
         return Promise.reject(reason);
       });
     }
-    var VERSION = "1.13.3";
+    var VERSION = "1.13.4";
     var validators$1 = {};
     ["object", "boolean", "number", "function", "string", "symbol"].forEach((type, i) => {
       validators$1[type] = function validator2(thing) {
@@ -4180,11 +4180,8 @@ var require_axios = __commonJS({
           chain.push(...responseInterceptorChain);
           len = chain.length;
           promise = Promise.resolve(config);
-          let prevResult = config;
           while (i < len) {
-            promise = promise.then(chain[i++]).then((result) => {
-              prevResult = result !== void 0 ? result : prevResult;
-            }).catch(chain[i++]).then(() => prevResult);
+            promise = promise.then(chain[i++], chain[i++]);
           }
           return promise;
         }
@@ -4208,7 +4205,7 @@ var require_axios = __commonJS({
         i = 0;
         len = responseInterceptorChain.length;
         while (i < len) {
-          promise = promise.then(responseInterceptorChain[i++]).catch(responseInterceptorChain[i++]);
+          promise = promise.then(responseInterceptorChain[i++], responseInterceptorChain[i++]);
         }
         return promise;
       }
@@ -10087,7 +10084,7 @@ var TodoistSyncPlugin = class extends import_obsidian3.Plugin {
 /*! Bundled license information:
 
 axios/dist/browser/axios.cjs:
-  (*! Axios v1.13.3 Copyright (c) 2026 Matt Zabriskie and contributors *)
+  (*! Axios v1.13.4 Copyright (c) 2026 Matt Zabriskie and contributors *)
 
 @babel/runtime/helpers/regenerator.js:
   (*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE *)

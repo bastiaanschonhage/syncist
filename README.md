@@ -17,17 +17,24 @@ When you add the `#todoist` tag to a task (or checkbox item) it will automatical
 
 ### Installation
 
-#### From Source (Development)
-1. Clone this repository
-2. Open the `TestVault` folder in Obsidian
-3. Enable Community plugins in Settings → Community plugins
-4. Enable the "Syncist (Todoist Sync)" plugin
-5. Configure your Todoist API token in the plugin settings
+#### From Community Plugins (Recommended)
+1. Open Obsidian Settings → Community plugins
+2. Click "Browse" and search for "Syncist"
+3. Install and enable the plugin
+4. Configure your Todoist API token in the plugin settings
 
 #### Manual Installation
-1. Copy the `TestVault/.obsidian/plugins/syncist-todoist-sync` folder to your vault's `.obsidian/plugins/` directory
-2. Make sure to include: `main.js`, `manifest.json`
-3. Enable the plugin in Obsidian settings
+1. Download `main.js` and `manifest.json` from the [latest release](https://github.com/bastiaanschonhage/syncist/releases)
+2. Create a folder `syncist-todoist-sync` in your vault's `.obsidian/plugins/` directory
+3. Copy `main.js` and `manifest.json` into that folder
+4. Enable the plugin in Obsidian settings
+
+#### From Source (Development)
+1. Clone this repository
+2. Run `npm install` and `npm run build`
+3. Open the `TestVault` folder in Obsidian (the plugin is symlinked)
+4. Enable Community plugins in Settings → Community plugins
+5. Enable the "Syncist (Todoist Sync)" plugin
 
 ### Configuration
 
@@ -68,11 +75,14 @@ After sync, the task will have a Todoist ID:
 | 🔼 | Medium priority | Priority 3 |
 | 🔽 | Low priority | Priority 2 |
 
+### Network Usage
+
+This plugin connects to the **Todoist API** to sync tasks. Your Todoist API token is stored locally in Obsidian's plugin data and is only used to communicate with Todoist's servers (`api.todoist.com`).
+
 ### Development
 
 To build the plugin from source:
 ```bash
-cd TestVault/.obsidian/plugins/syncist-todoist-sync
 npm install
 npm run build
 ```

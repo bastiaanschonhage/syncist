@@ -13,7 +13,11 @@
     "sync",
     "tasks"
   ],
-  "author": "",
+  "author": "Bastiaan Schönhage",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bastiaanschonhage/syncist.git"
+  },
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^20.10.0",
