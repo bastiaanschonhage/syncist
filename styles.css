@@ -1,0 +1,6 @@
+/* Syncist Todoist Sync Plugin Styles */
+
+/* API token input field - wider for better visibility */
+.syncist-api-token-input {
+  width: 300px;
+}

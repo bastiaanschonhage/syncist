@@ -8903,11 +8903,11 @@ var TodoistSyncSettingTab = class extends import_obsidian.PluginSettingTab {
     this.projectsLoaded = false;
     this.plugin = plugin;
   }
-  async display() {
+  display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "Syncist Settings" });
-    new import_obsidian.Setting(containerEl).setName("Todoist API Token").setDesc("Your Todoist API token. Find it in Todoist Settings \u2192 Integrations \u2192 Developer.").addText((text) => {
+    new import_obsidian.Setting(containerEl).setName("Syncist").setHeading();
+    new import_obsidian.Setting(containerEl).setName("Todoist API token").setDesc("Your Todoist API token. Find it in Todoist settings \u2192 Integrations \u2192 Developer.").addText((text) => {
       text.setPlaceholder("Enter your API token").setValue(this.plugin.settings.apiToken).onChange(async (value) => {
         this.plugin.settings.apiToken = value;
         await this.plugin.saveSettings();
@@ -8915,7 +8915,7 @@ var TodoistSyncSettingTab = class extends import_obsidian.PluginSettingTab {
         this.projects = [];
       });
       text.inputEl.type = "password";
-      text.inputEl.style.width = "300px";
+      text.inputEl.addClass("syncist-api-token-input");
     }).addButton((button) => {
       button.setButtonText("Verify").onClick(async () => {
         button.setDisabled(true);
@@ -8932,14 +8932,14 @@ var TodoistSyncSettingTab = class extends import_obsidian.PluginSettingTab {
           }
         } catch (error) {
           new import_obsidian.Notice("Failed to verify token. Please check your internet connection.");
-          console.error("Token verification error:", error);
+          console.warn("Token verification error:", error);
         } finally {
           button.setDisabled(false);
           button.setButtonText("Verify");
         }
       });
     });
-    new import_obsidian.Setting(containerEl).setName("Sync Tag").setDesc("Tag used to identify tasks for syncing. Include the # symbol.").addText(
+    new import_obsidian.Setting(containerEl).setName("Sync tag").setDesc("Tag used to identify tasks for syncing. Include the # symbol.").addText(
       (text) => text.setPlaceholder("#todoist").setValue(this.plugin.settings.syncTag).onChange(async (value) => {
         if (value && !value.startsWith("#")) {
           value = "#" + value;
@@ -8949,9 +8949,9 @@ var TodoistSyncSettingTab = class extends import_obsidian.PluginSettingTab {
       })
     );
     if (this.plugin.settings.apiToken && !this.projectsLoaded) {
-      await this.loadProjects();
+      void this.loadProjects().then(() => this.display());
     }
-    const projectSetting = new import_obsidian.Setting(containerEl).setName("Default Project").setDesc("Default Todoist project for new tasks. Leave empty to use Inbox.");
+    const projectSetting = new import_obsidian.Setting(containerEl).setName("Default project").setDesc("Default Todoist project for new tasks. Leave empty to use inbox.");
     if (this.projects.length > 0) {
       projectSetting.addDropdown((dropdown) => {
         dropdown.addOption("", "Inbox (default)");
@@ -8969,7 +8969,7 @@ var TodoistSyncSettingTab = class extends import_obsidian.PluginSettingTab {
         text.setPlaceholder("Verify API token to load projects").setValue(this.plugin.settings.defaultProjectId).setDisabled(true);
       });
     }
-    new import_obsidian.Setting(containerEl).setName("Sync Interval").setDesc("How often to sync with Todoist (in minutes). Set to 0 to disable automatic sync.").addText(
+    new import_obsidian.Setting(containerEl).setName("Sync interval").setDesc("How often to sync with Todoist (in minutes). Set to 0 to disable auto sync.").addText(
       (text) => text.setPlaceholder("5").setValue(String(this.plugin.settings.syncIntervalMinutes)).onChange(async (value) => {
         const num = parseInt(value, 10);
         if (!isNaN(num) && num >= 0) {
@@ -8979,18 +8979,17 @@ var TodoistSyncSettingTab = class extends import_obsidian.PluginSettingTab {
         }
       })
     );
-    new import_obsidian.Setting(containerEl).setName("Conflict Resolution").setDesc("How to handle conflicts when both Obsidian and Todoist have changes.").addDropdown((dropdown) => {
-      dropdown.addOption("todoist-wins", "Todoist wins (default)").addOption("obsidian-wins", "Obsidian wins").addOption("ask-user", "Ask me each time").setValue(this.plugin.settings.conflictResolution).onChange(async (value) => {
+    new import_obsidian.Setting(containerEl).setName("Conflict resolution").setDesc("How to handle conflicts when both sides have changes.").addDropdown((dropdown) => {
+      dropdown.addOption("todoist-wins", "Todoist wins").addOption("obsidian-wins", "Local wins").addOption("ask-user", "Ask me each time").setValue(this.plugin.settings.conflictResolution).onChange(async (value) => {
         this.plugin.settings.conflictResolution = value;
         await this.plugin.saveSettings();
       });
     });
-    containerEl.createEl("hr");
-    containerEl.createEl("h3", { text: "Manual Actions" });
-    new import_obsidian.Setting(containerEl).setName("Sync Now").setDesc("Manually trigger a sync with Todoist.").addButton((button) => {
-      button.setButtonText("Sync Now").setCta().onClick(async () => {
+    new import_obsidian.Setting(containerEl).setName("Manual actions").setHeading();
+    new import_obsidian.Setting(containerEl).setName("Sync now").setDesc("Manually trigger a sync.").addButton((button) => {
+      button.setButtonText("Sync now").setCta().onClick(async () => {
         if (!this.plugin.settings.apiToken) {
-          new import_obsidian.Notice("Please configure your Todoist API token first.");
+          new import_obsidian.Notice("Please configure your API token first.");
           return;
         }
         button.setDisabled(true);
@@ -9000,21 +8999,20 @@ var TodoistSyncSettingTab = class extends import_obsidian.PluginSettingTab {
           const message = `Sync complete: ${result.created} created, ${result.updated} updated, ${result.completed} completed`;
           new import_obsidian.Notice(message);
           if (result.errors.length > 0) {
-            console.error("Sync errors:", result.errors);
+            console.warn("Sync errors:", result.errors);
             new import_obsidian.Notice(`Sync had ${result.errors.length} error(s). Check console for details.`);
           }
           this.display();
         } catch (error) {
           new import_obsidian.Notice("Sync failed. Check console for details.");
-          console.error("Sync error:", error);
+          console.warn("Sync error:", error);
         } finally {
           button.setDisabled(false);
-          button.setButtonText("Sync Now");
+          button.setButtonText("Sync now");
         }
       });
     });
-    containerEl.createEl("hr");
-    containerEl.createEl("h3", { text: "Status" });
+    new import_obsidian.Setting(containerEl).setName("Status").setHeading();
     const statusEl = containerEl.createDiv({ cls: "todoist-sync-status" });
     this.updateStatusDisplay(statusEl);
   }
@@ -9030,7 +9028,7 @@ var TodoistSyncSettingTab = class extends import_obsidian.PluginSettingTab {
       this.projects = await this.plugin.todoistService.getProjects();
       this.projectsLoaded = true;
     } catch (error) {
-      console.error("Failed to load projects:", error);
+      console.warn("Failed to load projects:", error);
       this.projects = [];
     }
   }
@@ -9049,10 +9047,10 @@ var TodoistSyncSettingTab = class extends import_obsidian.PluginSettingTab {
       lastSyncText.textContent = `Last sync: ${lastSync.toLocaleString()}`;
     } else {
       const lastSyncText = containerEl.createEl("p");
-      lastSyncText.textContent = "Last sync: Never";
+      lastSyncText.textContent = "Last sync: never";
     }
     const apiStatus = containerEl.createEl("p");
-    apiStatus.textContent = `API Status: ${this.plugin.todoistService.isInitialized() ? "Connected" : "Not connected"}`;
+    apiStatus.textContent = `API status: ${this.plugin.todoistService.isInitialized() ? "Connected" : "Not connected"}`;
   }
 };
 
@@ -9156,12 +9154,13 @@ var TodoistService = class {
           allTasks.push(...response);
           cursor = null;
         } else {
-          const results = (_a = response.results) != null ? _a : [];
+          const paginatedResponse = response;
+          const results = (_a = paginatedResponse.results) != null ? _a : [];
           allTasks.push(...results);
-          cursor = (_b = response.nextCursor) != null ? _b : null;
+          cursor = (_b = paginatedResponse.nextCursor) != null ? _b : null;
         }
       } while (cursor);
-      console.log(`Fetched ${allTasks.length} tasks from Todoist`);
+      console.debug(`Fetched ${allTasks.length} tasks from Todoist`);
       return allTasks;
     } catch (error) {
       console.error("Failed to get tasks:", error);
@@ -9201,7 +9200,7 @@ var TodoistService = class {
         labels: (options == null ? void 0 : options.labels) || void 0,
         description: (options == null ? void 0 : options.description) || void 0
       });
-      console.log("Created Todoist task:", task.id, content);
+      console.debug("Created Todoist task:", task.id, content);
       return task;
     } catch (error) {
       console.error("Failed to create task:", error);
@@ -9217,7 +9216,7 @@ var TodoistService = class {
     }
     try {
       const task = await this.api.updateTask(taskId, updates);
-      console.log("Updated Todoist task:", taskId);
+      console.debug("Updated Todoist task:", taskId);
       return task;
     } catch (error) {
       console.error("Failed to update task:", error);
@@ -9233,7 +9232,7 @@ var TodoistService = class {
     }
     try {
       const success = await this.api.closeTask(taskId);
-      console.log("Completed Todoist task:", taskId);
+      console.debug("Completed Todoist task:", taskId);
       return success;
     } catch (error) {
       console.error("Failed to complete task:", error);
@@ -9249,7 +9248,7 @@ var TodoistService = class {
     }
     try {
       const success = await this.api.reopenTask(taskId);
-      console.log("Reopened Todoist task:", taskId);
+      console.debug("Reopened Todoist task:", taskId);
       return success;
     } catch (error) {
       console.error("Failed to reopen task:", error);
@@ -9265,7 +9264,7 @@ var TodoistService = class {
     }
     try {
       const success = await this.api.deleteTask(taskId);
-      console.log("Deleted Todoist task:", taskId);
+      console.debug("Deleted Todoist task:", taskId);
       return success;
     } catch (error) {
       console.error("Failed to delete task:", error);
@@ -9523,22 +9522,22 @@ var SyncEngine = class {
    */
   async performSync() {
     if (this.isSyncing) {
-      console.log("Todoist Sync: Already in progress, skipping...");
+      console.debug("Todoist Sync: Already in progress, skipping...");
       return { created: 0, updated: 0, completed: 0, conflicts: 0, errors: ["Sync already in progress"] };
     }
     if (!this.todoistService.isInitialized()) {
-      console.log("Todoist Sync: API not configured");
+      console.debug("Todoist Sync: API not configured");
       return { created: 0, updated: 0, completed: 0, conflicts: 0, errors: ["Todoist API not configured"] };
     }
     this.isSyncing = true;
     const result = { created: 0, updated: 0, completed: 0, conflicts: 0, errors: [] };
     try {
-      console.log("Todoist Sync: Starting sync...");
-      console.log("Todoist Sync: Fetching Todoist tasks...");
+      console.debug("Todoist Sync: Starting sync...");
+      console.debug("Todoist Sync: Fetching Todoist tasks...");
       let todoistTasks = [];
       try {
         todoistTasks = await this.todoistService.getTasks();
-        console.log(`Todoist Sync: Found ${todoistTasks.length} tasks in Todoist`);
+        console.debug(`Todoist Sync: Found ${todoistTasks.length} tasks in Todoist`);
       } catch (error) {
         console.error("Todoist Sync: Failed to fetch Todoist tasks:", error);
         result.errors.push(`Failed to fetch Todoist tasks: ${error}`);
@@ -9549,9 +9548,9 @@ var SyncEngine = class {
       for (const task of todoistTasks) {
         todoistTaskMap.set(task.id, task);
       }
-      console.log("Todoist Sync: Scanning Obsidian vault for tasks...");
+      console.debug("Todoist Sync: Scanning vault for tasks...");
       const obsidianTasks = await this.getAllObsidianTasks();
-      console.log(`Todoist Sync: Found ${obsidianTasks.length} tasks with ${this.settings.syncTag} tag`);
+      console.debug(`Todoist Sync: Found ${obsidianTasks.length} tasks with ${this.settings.syncTag} tag`);
       const syncedObsidianTasks = /* @__PURE__ */ new Map();
       const newObsidianTasks = [];
       for (const task of obsidianTasks) {
@@ -9561,13 +9560,13 @@ var SyncEngine = class {
           newObsidianTasks.push(task);
         }
       }
-      console.log(`Todoist Sync: ${newObsidianTasks.length} new tasks to create, ${syncedObsidianTasks.size} existing tasks to sync`);
+      console.debug(`Todoist Sync: ${newObsidianTasks.length} new tasks to create, ${syncedObsidianTasks.size} existing tasks to sync`);
       for (const task of newObsidianTasks) {
         try {
-          console.log(`Todoist Sync: Creating task "${task.content}"...`);
+          console.debug(`Todoist Sync: Creating task "${task.content}"...`);
           await this.createTodoistTask(task);
           result.created++;
-          console.log(`Todoist Sync: Task created successfully`);
+          console.debug("Todoist Sync: Task created successfully");
         } catch (error) {
           result.errors.push(`Failed to create task: ${task.content} - ${error}`);
           console.error("Todoist Sync: Failed to create task:", error);
@@ -9577,7 +9576,7 @@ var SyncEngine = class {
         const todoistTask = todoistTaskMap.get(todoistId);
         if (!todoistTask) {
           try {
-            console.log(`Todoist Sync: Task ${todoistId} not found in Todoist, marking completed in Obsidian`);
+            console.debug(`Todoist Sync: Task ${todoistId} not found in Todoist, marking completed`);
             await this.markObsidianTaskCompleted(obsidianTask);
             result.completed++;
             delete this.syncState.tasks[todoistId];
@@ -9600,14 +9599,14 @@ var SyncEngine = class {
           console.error("Todoist Sync: Failed to sync existing task:", error);
         }
       }
-      for (const [todoistId, todoistTask] of todoistTaskMap) {
+      for (const [todoistId] of todoistTaskMap) {
         const syncedTask = this.syncState.tasks[todoistId];
         if (syncedTask && !syncedObsidianTasks.has(todoistId)) {
           delete this.syncState.tasks[todoistId];
         }
       }
       this.syncState.lastFullSync = Date.now();
-      console.log("Todoist Sync: Completed!", result);
+      console.debug("Todoist Sync: Completed!", result);
     } catch (error) {
       result.errors.push(`Sync failed: ${error}`);
       console.error("Todoist Sync: Sync failed with error:", error);
@@ -9669,8 +9668,6 @@ var SyncEngine = class {
    */
   async syncExistingTask(obsidianTask, todoistTask) {
     var _a;
-    const syncedTask = this.syncState.tasks[todoistTask.id];
-    const currentHash = generateContentHash(obsidianTask);
     const obsidianCompleted = obsidianTask.isCompleted;
     const todoistCompleted = todoistTask.isCompleted;
     if (obsidianCompleted !== todoistCompleted) {
@@ -9694,7 +9691,6 @@ var SyncEngine = class {
         }
       }
     }
-    const obsidianChanged = !syncedTask || syncedTask.contentHash !== currentHash;
     const todoistContent = todoistTask.content;
     const todoistPriority = todoistTask.priority;
     const todoistDueDate = TodoistService.parseDueDate(todoistTask);
@@ -9893,7 +9889,7 @@ var TodoistSyncPlugin = class extends import_obsidian3.Plugin {
     this.statusBarItem = null;
   }
   async onload() {
-    console.log("Loading Syncist plugin...");
+    console.debug("Loading Syncist plugin...");
     await this.loadSettings();
     await this.loadSyncState();
     this.todoistService = new TodoistService();
@@ -9911,10 +9907,10 @@ var TodoistSyncPlugin = class extends import_obsidian3.Plugin {
     this.updateStatusBar();
     this.registerCommands();
     this.startSyncInterval();
-    console.log("Syncist plugin loaded");
+    console.debug("Syncist plugin loaded");
   }
   onunload() {
-    console.log("Unloading Syncist plugin...");
+    console.debug("Unloading Syncist plugin...");
     if (this.syncIntervalId !== null) {
       window.clearInterval(this.syncIntervalId);
       this.syncIntervalId = null;
@@ -9926,7 +9922,7 @@ var TodoistSyncPlugin = class extends import_obsidian3.Plugin {
   registerCommands() {
     this.addCommand({
       id: "create-todoist-task",
-      name: "Create Todoist task from current line",
+      name: "Create task from current line",
       editorCallback: async (editor, view) => {
         var _a;
         const cursor = editor.getCursor();
@@ -9952,13 +9948,13 @@ var TodoistSyncPlugin = class extends import_obsidian3.Plugin {
     });
     this.addCommand({
       id: "sync-now",
-      name: "Sync with Todoist now",
+      name: "Sync now",
       callback: async () => {
         if (!this.settings.apiToken) {
-          new import_obsidian3.Notice("Please configure your Todoist API token in settings.");
+          new import_obsidian3.Notice("Please configure your API token in the settings.");
           return;
         }
-        new import_obsidian3.Notice("Starting Todoist sync...");
+        new import_obsidian3.Notice("Starting sync...");
         const result = await this.syncNow();
         const message = `Sync complete: ${result.created} created, ${result.updated} updated, ${result.completed} completed`;
         new import_obsidian3.Notice(message);
@@ -9969,12 +9965,12 @@ var TodoistSyncPlugin = class extends import_obsidian3.Plugin {
     });
     this.addCommand({
       id: "open-settings",
-      name: "Open Todoist Sync settings",
+      name: "Open settings",
       callback: () => {
-        const setting = this.app.setting;
-        if (setting) {
-          setting.open();
-          setting.openTabById("todoist-sync");
+        const appWithSettings = this.app;
+        if (appWithSettings.setting) {
+          appWithSettings.setting.open();
+          appWithSettings.setting.openTabById("todoist-sync");
         }
       }
     });
@@ -10044,16 +10040,14 @@ var TodoistSyncPlugin = class extends import_obsidian3.Plugin {
       return;
     }
     const intervalMs = this.settings.syncIntervalMinutes * 60 * 1e3;
-    this.syncIntervalId = window.setInterval(async () => {
+    this.syncIntervalId = window.setInterval(() => {
       if (!this.settings.apiToken) {
         return;
       }
-      console.log("Running scheduled Todoist sync...");
-      try {
-        await this.syncNow();
-      } catch (error) {
+      console.debug("Running scheduled sync...");
+      void this.syncNow().catch((error) => {
         console.error("Scheduled sync failed:", error);
-      }
+      });
     }, intervalMs);
     this.registerInterval(this.syncIntervalId);
   }

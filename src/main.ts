@@ -1,4 +1,4 @@
-import { Editor, MarkdownView, Notice, Plugin } from 'obsidian';
+import { App, Editor, MarkdownView, Notice, Plugin } from 'obsidian';
 import { TodoistSyncSettingTab } from './settings';
 import { TodoistService } from './todoist-service';
 import { SyncEngine } from './sync-engine';
@@ -24,7 +24,7 @@ export default class TodoistSyncPlugin extends Plugin {
   private statusBarItem: HTMLElement | null = null;
 
   async onload(): Promise<void> {
-    console.log('Loading Syncist plugin...');
+    console.debug('Loading Syncist plugin...');
 
     // Load settings and sync state
     await this.loadSettings();
@@ -57,11 +57,11 @@ export default class TodoistSyncPlugin extends Plugin {
     // Start sync interval
     this.startSyncInterval();
 
-    console.log('Syncist plugin loaded');
+    console.debug('Syncist plugin loaded');
   }
 
   onunload(): void {
-    console.log('Unloading Syncist plugin...');
+    console.debug('Unloading Syncist plugin...');
     
     // Stop sync interval
     if (this.syncIntervalId !== null) {
@@ -77,7 +77,7 @@ export default class TodoistSyncPlugin extends Plugin {
     // Command: Create Todoist task from current line
     this.addCommand({
       id: 'create-todoist-task',
-      name: 'Create Todoist task from current line',
+      name: 'Create task from current line',
       editorCallback: async (editor: Editor, view: MarkdownView) => {
         const cursor = editor.getCursor();
         const line = editor.getLine(cursor.line);
@@ -111,14 +111,14 @@ export default class TodoistSyncPlugin extends Plugin {
     // Command: Sync now
     this.addCommand({
       id: 'sync-now',
-      name: 'Sync with Todoist now',
+      name: 'Sync now',
       callback: async () => {
         if (!this.settings.apiToken) {
-          new Notice('Please configure your Todoist API token in settings.');
+          new Notice('Please configure your API token in the settings.');
           return;
         }
 
-        new Notice('Starting Todoist sync...');
+        new Notice('Starting sync...');
         const result = await this.syncNow();
         
         const message = `Sync complete: ${result.created} created, ${result.updated} updated, ${result.completed} completed`;
@@ -133,13 +133,15 @@ export default class TodoistSyncPlugin extends Plugin {
     // Command: Open Todoist Sync settings
     this.addCommand({
       id: 'open-settings',
-      name: 'Open Todoist Sync settings',
+      name: 'Open settings',
       callback: () => {
-        // Open settings tab
-        const setting = (this.app as any).setting;
-        if (setting) {
-          setting.open();
-          setting.openTabById('todoist-sync');
+        // Open settings tab - using internal Obsidian API
+        const appWithSettings = this.app as App & { 
+          setting?: { open: () => void; openTabById: (id: string) => void } 
+        };
+        if (appWithSettings.setting) {
+          appWithSettings.setting.open();
+          appWithSettings.setting.openTabById('todoist-sync');
         }
       },
     });
@@ -219,17 +221,15 @@ export default class TodoistSyncPlugin extends Plugin {
 
     const intervalMs = this.settings.syncIntervalMinutes * 60 * 1000;
     
-    this.syncIntervalId = window.setInterval(async () => {
+    this.syncIntervalId = window.setInterval(() => {
       if (!this.settings.apiToken) {
         return;
       }
 
-      console.log('Running scheduled Todoist sync...');
-      try {
-        await this.syncNow();
-      } catch (error) {
+      console.debug('Running scheduled sync...');
+      void this.syncNow().catch((error: unknown) => {
         console.error('Scheduled sync failed:', error);
-      }
+      });
     }, intervalMs);
 
     // Register interval for cleanup

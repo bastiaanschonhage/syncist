@@ -154,6 +154,23 @@ export interface SyncConflict {
 }
 
 /**
+ * Todoist API paginated response format (v3)
+ */
+export interface TodoistPaginatedResponse<T> {
+  results: T[];
+  nextCursor?: string | null;
+}
+
+/**
+ * Todoist project from API
+ */
+export interface TodoistApiProject {
+  id: string;
+  name: string;
+  isInboxProject?: boolean;
+}
+
+/**
  * Re-export Todoist task type for convenience
  */
 export type { TodoistTask };

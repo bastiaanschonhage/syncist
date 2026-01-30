@@ -1,6 +1,6 @@
 import { App, PluginSettingTab, Setting, Notice } from 'obsidian';
 import TodoistSyncPlugin from './main';
-import { TodoistSyncSettings, ConflictResolution, TodoistProject } from './types';
+import { ConflictResolution, TodoistProject } from './types';
 
 /**
  * Settings tab for Todoist Sync plugin
@@ -15,16 +15,16 @@ export class TodoistSyncSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
-  async display(): Promise<void> {
+  display(): void {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl('h2', { text: 'Syncist Settings' });
+    new Setting(containerEl).setName('Syncist').setHeading();
 
     // API Token Setting
     new Setting(containerEl)
-      .setName('Todoist API Token')
-      .setDesc('Your Todoist API token. Find it in Todoist Settings → Integrations → Developer.')
+      .setName('Todoist API token')
+      .setDesc('Your Todoist API token. Find it in Todoist settings → Integrations → Developer.')
       .addText((text) => {
         text
           .setPlaceholder('Enter your API token')
@@ -38,7 +38,7 @@ export class TodoistSyncSettingTab extends PluginSettingTab {
           });
         // Make it look like a password field
         text.inputEl.type = 'password';
-        text.inputEl.style.width = '300px';
+        text.inputEl.addClass('syncist-api-token-input');
       })
       .addButton((button) => {
         button
@@ -61,7 +61,7 @@ export class TodoistSyncSettingTab extends PluginSettingTab {
               }
             } catch (error) {
               new Notice('Failed to verify token. Please check your internet connection.');
-              console.error('Token verification error:', error);
+              console.warn('Token verification error:', error);
             } finally {
               button.setDisabled(false);
               button.setButtonText('Verify');
@@ -71,7 +71,7 @@ export class TodoistSyncSettingTab extends PluginSettingTab {
 
     // Sync Tag Setting
     new Setting(containerEl)
-      .setName('Sync Tag')
+      .setName('Sync tag')
       .setDesc('Tag used to identify tasks for syncing. Include the # symbol.')
       .addText((text) =>
         text
@@ -89,13 +89,13 @@ export class TodoistSyncSettingTab extends PluginSettingTab {
 
     // Load projects if token is set
     if (this.plugin.settings.apiToken && !this.projectsLoaded) {
-      await this.loadProjects();
+      void this.loadProjects().then(() => this.display());
     }
 
     // Default Project Setting
     const projectSetting = new Setting(containerEl)
-      .setName('Default Project')
-      .setDesc('Default Todoist project for new tasks. Leave empty to use Inbox.');
+      .setName('Default project')
+      .setDesc('Default Todoist project for new tasks. Leave empty to use inbox.');
 
     if (this.projects.length > 0) {
       projectSetting.addDropdown((dropdown) => {
@@ -123,8 +123,8 @@ export class TodoistSyncSettingTab extends PluginSettingTab {
 
     // Sync Interval Setting
     new Setting(containerEl)
-      .setName('Sync Interval')
-      .setDesc('How often to sync with Todoist (in minutes). Set to 0 to disable automatic sync.')
+      .setName('Sync interval')
+      .setDesc('How often to sync with Todoist (in minutes). Set to 0 to disable auto sync.')
       .addText((text) =>
         text
           .setPlaceholder('5')
@@ -141,12 +141,12 @@ export class TodoistSyncSettingTab extends PluginSettingTab {
 
     // Conflict Resolution Setting
     new Setting(containerEl)
-      .setName('Conflict Resolution')
-      .setDesc('How to handle conflicts when both Obsidian and Todoist have changes.')
+      .setName('Conflict resolution')
+      .setDesc('How to handle conflicts when both sides have changes.')
       .addDropdown((dropdown) => {
         dropdown
-          .addOption('todoist-wins', 'Todoist wins (default)')
-          .addOption('obsidian-wins', 'Obsidian wins')
+          .addOption('todoist-wins', 'Todoist wins')
+          .addOption('obsidian-wins', 'Local wins')
           .addOption('ask-user', 'Ask me each time')
           .setValue(this.plugin.settings.conflictResolution)
           .onChange(async (value) => {
@@ -155,22 +155,19 @@ export class TodoistSyncSettingTab extends PluginSettingTab {
           });
       });
 
-    // Separator
-    containerEl.createEl('hr');
-
     // Manual Sync Section
-    containerEl.createEl('h3', { text: 'Manual Actions' });
+    new Setting(containerEl).setName('Manual actions').setHeading();
 
     new Setting(containerEl)
-      .setName('Sync Now')
-      .setDesc('Manually trigger a sync with Todoist.')
+      .setName('Sync now')
+      .setDesc('Manually trigger a sync.')
       .addButton((button) => {
         button
-          .setButtonText('Sync Now')
+          .setButtonText('Sync now')
           .setCta()
           .onClick(async () => {
             if (!this.plugin.settings.apiToken) {
-              new Notice('Please configure your Todoist API token first.');
+              new Notice('Please configure your API token first.');
               return;
             }
 
@@ -183,7 +180,7 @@ export class TodoistSyncSettingTab extends PluginSettingTab {
               new Notice(message);
               
               if (result.errors.length > 0) {
-                console.error('Sync errors:', result.errors);
+                console.warn('Sync errors:', result.errors);
                 new Notice(`Sync had ${result.errors.length} error(s). Check console for details.`);
               }
               
@@ -191,17 +188,16 @@ export class TodoistSyncSettingTab extends PluginSettingTab {
               this.display();
             } catch (error) {
               new Notice('Sync failed. Check console for details.');
-              console.error('Sync error:', error);
+              console.warn('Sync error:', error);
             } finally {
               button.setDisabled(false);
-              button.setButtonText('Sync Now');
+              button.setButtonText('Sync now');
             }
           });
       });
 
     // Status Section
-    containerEl.createEl('hr');
-    containerEl.createEl('h3', { text: 'Status' });
+    new Setting(containerEl).setName('Status').setHeading();
 
     const statusEl = containerEl.createDiv({ cls: 'todoist-sync-status' });
     this.updateStatusDisplay(statusEl);
@@ -220,7 +216,7 @@ export class TodoistSyncSettingTab extends PluginSettingTab {
       this.projects = await this.plugin.todoistService.getProjects();
       this.projectsLoaded = true;
     } catch (error) {
-      console.error('Failed to load projects:', error);
+      console.warn('Failed to load projects:', error);
       this.projects = [];
     }
   }
@@ -243,10 +239,10 @@ export class TodoistSyncSettingTab extends PluginSettingTab {
       lastSyncText.textContent = `Last sync: ${lastSync.toLocaleString()}`;
     } else {
       const lastSyncText = containerEl.createEl('p');
-      lastSyncText.textContent = 'Last sync: Never';
+      lastSyncText.textContent = 'Last sync: never';
     }
 
     const apiStatus = containerEl.createEl('p');
-    apiStatus.textContent = `API Status: ${this.plugin.todoistService.isInitialized() ? 'Connected' : 'Not connected'}`;
+    apiStatus.textContent = `API status: ${this.plugin.todoistService.isInitialized() ? 'Connected' : 'Not connected'}`;
   }
 }

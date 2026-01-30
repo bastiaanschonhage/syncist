@@ -1,4 +1,4 @@
-import { App, TFile, Notice } from 'obsidian';
+import { App, TFile } from 'obsidian';
 import { Task } from '@doist/todoist-api-typescript';
 import { TodoistService } from './todoist-service';
 import {
@@ -11,13 +11,10 @@ import {
 import {
   ParsedObsidianTask,
   SyncState,
-  SyncedTask,
   SyncResult,
   SyncConflict,
-  ConflictResolution,
   TodoistSyncSettings,
   TodoistPriority,
-  DEFAULT_SYNC_STATE,
 } from './types';
 
 /**
@@ -77,12 +74,12 @@ export class SyncEngine {
    */
   async performSync(): Promise<SyncResult> {
     if (this.isSyncing) {
-      console.log('Todoist Sync: Already in progress, skipping...');
+      console.debug('Todoist Sync: Already in progress, skipping...');
       return { created: 0, updated: 0, completed: 0, conflicts: 0, errors: ['Sync already in progress'] };
     }
 
     if (!this.todoistService.isInitialized()) {
-      console.log('Todoist Sync: API not configured');
+      console.debug('Todoist Sync: API not configured');
       return { created: 0, updated: 0, completed: 0, conflicts: 0, errors: ['Todoist API not configured'] };
     }
 
@@ -90,14 +87,14 @@ export class SyncEngine {
     const result: SyncResult = { created: 0, updated: 0, completed: 0, conflicts: 0, errors: [] };
 
     try {
-      console.log('Todoist Sync: Starting sync...');
+      console.debug('Todoist Sync: Starting sync...');
 
       // Get all Todoist tasks
-      console.log('Todoist Sync: Fetching Todoist tasks...');
+      console.debug('Todoist Sync: Fetching Todoist tasks...');
       let todoistTasks: Task[] = [];
       try {
         todoistTasks = await this.todoistService.getTasks();
-        console.log(`Todoist Sync: Found ${todoistTasks.length} tasks in Todoist`);
+        console.debug(`Todoist Sync: Found ${todoistTasks.length} tasks in Todoist`);
       } catch (error) {
         console.error('Todoist Sync: Failed to fetch Todoist tasks:', error);
         result.errors.push(`Failed to fetch Todoist tasks: ${error}`);
@@ -111,9 +108,9 @@ export class SyncEngine {
       }
 
       // Get all Obsidian tasks with sync tag
-      console.log('Todoist Sync: Scanning Obsidian vault for tasks...');
+      console.debug('Todoist Sync: Scanning vault for tasks...');
       const obsidianTasks = await this.getAllObsidianTasks();
-      console.log(`Todoist Sync: Found ${obsidianTasks.length} tasks with ${this.settings.syncTag} tag`);
+      console.debug(`Todoist Sync: Found ${obsidianTasks.length} tasks with ${this.settings.syncTag} tag`);
 
       // Group tasks by Todoist ID for comparison
       const syncedObsidianTasks = new Map<string, ParsedObsidianTask>();
@@ -127,15 +124,15 @@ export class SyncEngine {
         }
       }
 
-      console.log(`Todoist Sync: ${newObsidianTasks.length} new tasks to create, ${syncedObsidianTasks.size} existing tasks to sync`);
+      console.debug(`Todoist Sync: ${newObsidianTasks.length} new tasks to create, ${syncedObsidianTasks.size} existing tasks to sync`);
 
       // 1. Create Todoist tasks for new Obsidian tasks
       for (const task of newObsidianTasks) {
         try {
-          console.log(`Todoist Sync: Creating task "${task.content}"...`);
+          console.debug(`Todoist Sync: Creating task "${task.content}"...`);
           await this.createTodoistTask(task);
           result.created++;
-          console.log(`Todoist Sync: Task created successfully`);
+          console.debug('Todoist Sync: Task created successfully');
         } catch (error) {
           result.errors.push(`Failed to create task: ${task.content} - ${error}`);
           console.error('Todoist Sync: Failed to create task:', error);
@@ -149,7 +146,7 @@ export class SyncEngine {
         if (!todoistTask) {
           // Task was deleted in Todoist - mark as completed in Obsidian
           try {
-            console.log(`Todoist Sync: Task ${todoistId} not found in Todoist, marking completed in Obsidian`);
+            console.debug(`Todoist Sync: Task ${todoistId} not found in Todoist, marking completed`);
             await this.markObsidianTaskCompleted(obsidianTask);
             result.completed++;
             delete this.syncState.tasks[todoistId];
@@ -174,7 +171,7 @@ export class SyncEngine {
 
       // 3. Check for Todoist tasks that need to sync back to Obsidian
       // (tasks created in Todoist that have corresponding Obsidian entries that were completed)
-      for (const [todoistId, todoistTask] of todoistTaskMap) {
+      for (const [todoistId] of todoistTaskMap) {
         const syncedTask = this.syncState.tasks[todoistId];
         if (syncedTask && !syncedObsidianTasks.has(todoistId)) {
           // Task exists in sync state but not found in Obsidian
@@ -184,7 +181,7 @@ export class SyncEngine {
       }
 
       this.syncState.lastFullSync = Date.now();
-      console.log('Todoist Sync: Completed!', result);
+      console.debug('Todoist Sync: Completed!', result);
 
     } catch (error) {
       result.errors.push(`Sync failed: ${error}`);
@@ -260,9 +257,6 @@ export class SyncEngine {
     obsidianTask: ParsedObsidianTask,
     todoistTask: Task
   ): Promise<'updated' | 'conflict' | 'completed' | 'unchanged'> {
-    const syncedTask = this.syncState.tasks[todoistTask.id];
-    const currentHash = generateContentHash(obsidianTask);
-
     // Check for completion status changes
     const obsidianCompleted = obsidianTask.isCompleted;
     const todoistCompleted = todoistTask.isCompleted;
@@ -294,7 +288,6 @@ export class SyncEngine {
     }
 
     // Check for content changes
-    const obsidianChanged = !syncedTask || syncedTask.contentHash !== currentHash;
     const todoistContent = todoistTask.content;
     const todoistPriority = todoistTask.priority as TodoistPriority;
     const todoistDueDate = TodoistService.parseDueDate(todoistTask);

@@ -1,5 +1,5 @@
 import { TodoistApi, Task } from '@doist/todoist-api-typescript';
-import { TaskOptions, TodoistPriority, TodoistProject } from './types';
+import { TaskOptions, TodoistPriority, TodoistProject, TodoistPaginatedResponse, TodoistApiProject } from './types';
 
 /**
  * Service class wrapping the Todoist API
@@ -50,8 +50,10 @@ export class TodoistService {
     try {
       const response = await this.api.getProjects();
       // API v3 returns { results: Project[] } or direct array depending on version
-      const projects = Array.isArray(response) ? response : (response as any).results ?? [];
-      return projects.map((project: any) => ({
+      const projects: TodoistApiProject[] = Array.isArray(response) 
+        ? response 
+        : (response as TodoistPaginatedResponse<TodoistApiProject>).results ?? [];
+      return projects.map((project: TodoistApiProject) => ({
         id: project.id,
         name: project.name,
         isInbox: project.isInboxProject ?? false,
@@ -92,13 +94,14 @@ export class TodoistService {
           allTasks.push(...response);
           cursor = null; // No pagination for array response
         } else {
-          const results = (response as any).results ?? [];
+          const paginatedResponse = response as TodoistPaginatedResponse<Task>;
+          const results = paginatedResponse.results ?? [];
           allTasks.push(...results);
-          cursor = (response as any).nextCursor ?? null;
+          cursor = paginatedResponse.nextCursor ?? null;
         }
       } while (cursor);
 
-      console.log(`Fetched ${allTasks.length} tasks from Todoist`);
+      console.debug(`Fetched ${allTasks.length} tasks from Todoist`);
       return allTasks;
     } catch (error) {
       console.error('Failed to get tasks:', error);
@@ -144,7 +147,7 @@ export class TodoistService {
         description: options?.description || undefined,
       });
 
-      console.log('Created Todoist task:', task.id, content);
+      console.debug('Created Todoist task:', task.id, content);
       return task;
     } catch (error) {
       console.error('Failed to create task:', error);
@@ -168,7 +171,7 @@ export class TodoistService {
 
     try {
       const task = await this.api.updateTask(taskId, updates);
-      console.log('Updated Todoist task:', taskId);
+      console.debug('Updated Todoist task:', taskId);
       return task;
     } catch (error) {
       console.error('Failed to update task:', error);
@@ -186,7 +189,7 @@ export class TodoistService {
 
     try {
       const success = await this.api.closeTask(taskId);
-      console.log('Completed Todoist task:', taskId);
+      console.debug('Completed Todoist task:', taskId);
       return success;
     } catch (error) {
       console.error('Failed to complete task:', error);
@@ -204,7 +207,7 @@ export class TodoistService {
 
     try {
       const success = await this.api.reopenTask(taskId);
-      console.log('Reopened Todoist task:', taskId);
+      console.debug('Reopened Todoist task:', taskId);
       return success;
     } catch (error) {
       console.error('Failed to reopen task:', error);
@@ -222,7 +225,7 @@ export class TodoistService {
 
     try {
       const success = await this.api.deleteTask(taskId);
-      console.log('Deleted Todoist task:', taskId);
+      console.debug('Deleted Todoist task:', taskId);
       return success;
     } catch (error) {
       console.error('Failed to delete task:', error);
