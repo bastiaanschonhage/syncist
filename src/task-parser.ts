@@ -6,8 +6,8 @@ import { ParsedObsidianTask, TodoistPriority } from './types';
 const PATTERNS = {
   // Matches markdown task: - [ ] or - [x] or * [ ] etc.
   task: /^(\s*)[-*]\s+\[([ xX])\]\s+(.*)$/,
-  // Matches Todoist ID comment: <!-- todoist-id:123456 -->
-  todoistId: /<!--\s*todoist-id:\s*(\d+)\s*-->/,
+  // Matches Todoist ID comment: <!-- todoist-id:abc123 --> (v1 IDs are alphanumeric)
+  todoistId: /<!--\s*todoist-id:\s*([\w]+)\s*-->/,
   // Matches hashtags: #tag (but not #project/ prefixed)
   hashtag: /#([a-zA-Z0-9_-]+)/g,
   // Tasks plugin emoji patterns
@@ -153,7 +153,7 @@ function extractLabels(content: string, syncTag: string): string[] {
 function cleanTaskContent(content: string, syncTag: string): string {
   let cleaned = content;
 
-  cleaned = cleaned.replace(PATTERNS.todoistId, '');
+  cleaned = cleaned.replace(/<!--\s*todoist-id:\s*[\w]+\s*-->/g, '');
 
   const syncTagPattern = new RegExp(escapeRegex(syncTag), 'gi');
   cleaned = cleaned.replace(syncTagPattern, '');
@@ -228,7 +228,7 @@ export function buildTaskLine(task: ParsedObsidianTask, syncTag: string): string
  * Update an existing task line with new Todoist ID
  */
 export function addTodoistIdToLine(line: string, todoistId: string): string {
-  let updated = line.replace(PATTERNS.todoistId, '').trim();
+  let updated = line.replace(/<!--\s*todoist-id:\s*[\w]+\s*-->/g, '').trim();
   updated += ` <!-- todoist-id:${todoistId} -->`;
   return updated;
 }

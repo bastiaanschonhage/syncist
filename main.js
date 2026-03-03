@@ -503,8 +503,8 @@ var import_obsidian3 = require("obsidian");
 var PATTERNS = {
   // Matches markdown task: - [ ] or - [x] or * [ ] etc.
   task: /^(\s*)[-*]\s+\[([ xX])\]\s+(.*)$/,
-  // Matches Todoist ID comment: <!-- todoist-id:123456 -->
-  todoistId: /<!--\s*todoist-id:\s*(\d+)\s*-->/,
+  // Matches Todoist ID comment: <!-- todoist-id:abc123 --> (v1 IDs are alphanumeric)
+  todoistId: /<!--\s*todoist-id:\s*([\w]+)\s*-->/,
   // Matches hashtags: #tag (but not #project/ prefixed)
   hashtag: /#([a-zA-Z0-9_-]+)/g,
   // Tasks plugin emoji patterns
@@ -605,7 +605,7 @@ function extractLabels(content, syncTag) {
 }
 function cleanTaskContent(content, syncTag) {
   let cleaned = content;
-  cleaned = cleaned.replace(PATTERNS.todoistId, "");
+  cleaned = cleaned.replace(/<!--\s*todoist-id:\s*[\w]+\s*-->/g, "");
   const syncTagPattern = new RegExp(escapeRegex(syncTag), "gi");
   cleaned = cleaned.replace(syncTagPattern, "");
   cleaned = cleaned.replace(PATTERNS.dueDate, "");
@@ -652,7 +652,7 @@ function buildTaskLine(task, syncTag) {
   return line;
 }
 function addTodoistIdToLine(line, todoistId) {
-  let updated = line.replace(PATTERNS.todoistId, "").trim();
+  let updated = line.replace(/<!--\s*todoist-id:\s*[\w]+\s*-->/g, "").trim();
   updated += ` <!-- todoist-id:${todoistId} -->`;
   return updated;
 }
@@ -1187,7 +1187,7 @@ var SyncEngine = class {
       isTask = true;
       prefix = taskMatch[1];
       content = taskMatch[3];
-      const todoistIdMatch = content.match(/<!--\s*todoist-id:\s*(\d+)\s*-->/);
+      const todoistIdMatch = content.match(/<!--\s*todoist-id:\s*([\w]+)\s*-->/);
       if (todoistIdMatch) {
         return { success: false, message: "Task is already synced with Todoist." };
       }

@@ -583,7 +583,7 @@ export class SyncEngine {
       prefix = taskMatch[1];
       content = taskMatch[3];
       
-      const todoistIdMatch = content.match(/<!--\s*todoist-id:\s*(\d+)\s*-->/);
+      const todoistIdMatch = content.match(/<!--\s*todoist-id:\s*([\w]+)\s*-->/);
       if (todoistIdMatch) {
         return { success: false, message: 'Task is already synced with Todoist.' };
       }
