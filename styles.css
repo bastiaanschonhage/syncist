@@ -4,3 +4,138 @@
 .syncist-api-token-input {
   width: 300px;
 }
+
+/* ─── Import Modal ─── */
+
+.syncist-import-suggestion {
+  padding: 4px 0;
+}
+
+.syncist-import-title {
+  font-size: var(--font-ui-medium);
+}
+
+.syncist-import-priority {
+  margin-right: 2px;
+}
+
+.syncist-import-meta {
+  margin-top: 2px;
+}
+
+.syncist-import-meta-text {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+/* ─── Query Block ─── */
+
+.syncist-query-block {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  padding: 12px;
+  margin: 8px 0;
+  background: var(--background-secondary);
+}
+
+.syncist-query-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.syncist-query-filter-label {
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.syncist-query-refresh {
+  cursor: pointer;
+  background: none;
+  border: none;
+  font-size: 16px;
+  padding: 2px 6px;
+  border-radius: var(--radius-s);
+  color: var(--text-muted);
+}
+
+.syncist-query-refresh:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.syncist-query-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.syncist-query-task {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 4px;
+  border-radius: var(--radius-s);
+}
+
+.syncist-query-task:hover {
+  background: var(--background-modifier-hover);
+}
+
+.syncist-query-subtask {
+  padding-left: 24px;
+}
+
+.syncist-query-checkbox {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.syncist-query-task-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.syncist-query-content {
+  display: block;
+  font-size: var(--font-ui-medium);
+}
+
+.syncist-query-meta {
+  margin-top: 1px;
+}
+
+.syncist-query-badge {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.syncist-query-loading,
+.syncist-query-empty {
+  text-align: center;
+  padding: 16px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.syncist-query-error {
+  color: var(--text-error);
+  padding: 8px;
+  font-size: var(--font-ui-small);
+}
+
+.syncist-query-footer {
+  margin-top: 6px;
+  text-align: right;
+}
+
+.syncist-query-timestamp {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+}

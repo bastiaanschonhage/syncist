@@ -8,7 +8,7 @@ const PATTERNS = {
   task: /^(\s*)[-*]\s+\[([ xX])\]\s+(.*)$/,
   // Matches Todoist ID comment: <!-- todoist-id:123456 -->
   todoistId: /<!--\s*todoist-id:\s*(\d+)\s*-->/,
-  // Matches hashtags: #tag
+  // Matches hashtags: #tag (but not #project/ prefixed)
   hashtag: /#([a-zA-Z0-9_-]+)/g,
   // Tasks plugin emoji patterns
   dueDate: /📅\s*(\d{4}-\d{2}-\d{2})/,
@@ -20,17 +20,30 @@ const PATTERNS = {
   lowPriority: /🔽/,
   // Alternative text-based due date: due:YYYY-MM-DD
   textDueDate: /due:(\d{4}-\d{2}-\d{2})/i,
+  // Project metadata: 📁 ProjectName
+  project: new RegExp('📁\\s*([^\\s#📅⏫🔼🔽<]+)', 'u'),
 };
 
 /**
- * Parse a single line to extract task information
+ * Compute indentation level from leading whitespace.
+ * Uses 2-space increments (common in Obsidian).
+ */
+function getIndentLevel(line: string): number {
+  const leadingSpaces = line.match(/^(\s*)/)?.[1].length ?? 0;
+  return Math.floor(leadingSpaces / 2);
+}
+
+/**
+ * Parse a single line to extract task information.
+ * If requireSyncTag is false, the task is treated as a subtask inheriting sync from its parent.
  */
 export function parseTaskLine(
   line: string,
   lineNumber: number,
   filePath: string,
   syncTag: string,
-  lastModified: number
+  lastModified: number,
+  requireSyncTag = true
 ): ParsedObsidianTask | null {
   const match = line.match(PATTERNS.task);
   if (!match) return null;
@@ -38,27 +51,22 @@ export function parseTaskLine(
   const [, , checkbox, taskContent] = match;
   const isCompleted = checkbox.toLowerCase() === 'x';
 
-  // Check if task has the sync tag
   const syncTagPattern = new RegExp(escapeRegex(syncTag), 'i');
-  if (!syncTagPattern.test(taskContent)) {
+  const hasSyncTag = syncTagPattern.test(taskContent);
+
+  if (requireSyncTag && !hasSyncTag) {
     return null;
   }
 
-  // Extract Todoist ID if present
   const todoistIdMatch = taskContent.match(PATTERNS.todoistId);
   const todoistId = todoistIdMatch ? todoistIdMatch[1] : null;
 
-  // Extract due date (Tasks plugin emoji or text format)
   const dueDate = extractDueDate(taskContent);
-
-  // Extract priority (Tasks plugin emoji format)
   const priority = extractPriority(taskContent);
-
-  // Extract labels (hashtags excluding sync tag)
   const labels = extractLabels(taskContent, syncTag);
-
-  // Clean content: remove metadata, keeping only the actual task text
   const content = cleanTaskContent(taskContent, syncTag);
+  const indentLevel = getIndentLevel(line);
+  const projectName = extractProjectName(taskContent);
 
   return {
     originalLine: line,
@@ -67,27 +75,36 @@ export function parseTaskLine(
     content,
     isCompleted,
     todoistId,
+    parentId: null,
+    indentLevel,
     dueDate,
     priority,
     labels,
-    description: '', // Will be populated by scanning subsequent lines
+    description: '',
+    projectId: null,
+    projectName,
     lastModified,
   };
+}
+
+/**
+ * Extract project name from 📁 emoji metadata
+ */
+function extractProjectName(content: string): string | null {
+  const match = content.match(PATTERNS.project);
+  return match ? match[1] : null;
 }
 
 /**
  * Extract due date from task content
  */
 function extractDueDate(content: string): string | null {
-  // Try Tasks plugin emoji format first
   const emojiMatch = content.match(PATTERNS.dueDate);
   if (emojiMatch) return emojiMatch[1];
 
-  // Try scheduled date
   const scheduledMatch = content.match(PATTERNS.scheduledDate);
   if (scheduledMatch) return scheduledMatch[1];
 
-  // Try text format
   const textMatch = content.match(PATTERNS.textDueDate);
   if (textMatch) return textMatch[1];
 
@@ -125,7 +142,6 @@ function extractLabels(content: string, syncTag: string): string[] {
     }
   }
   
-  // Reset regex lastIndex
   PATTERNS.hashtag.lastIndex = 0;
   
   return labels;
@@ -137,14 +153,11 @@ function extractLabels(content: string, syncTag: string): string[] {
 function cleanTaskContent(content: string, syncTag: string): string {
   let cleaned = content;
 
-  // Remove Todoist ID comment
   cleaned = cleaned.replace(PATTERNS.todoistId, '');
 
-  // Remove sync tag
   const syncTagPattern = new RegExp(escapeRegex(syncTag), 'gi');
   cleaned = cleaned.replace(syncTagPattern, '');
 
-  // Remove Tasks plugin emojis and their values
   cleaned = cleaned.replace(PATTERNS.dueDate, '');
   cleaned = cleaned.replace(PATTERNS.scheduledDate, '');
   cleaned = cleaned.replace(PATTERNS.startDate, '');
@@ -153,10 +166,11 @@ function cleanTaskContent(content: string, syncTag: string): string {
   cleaned = cleaned.replace(PATTERNS.mediumPriority, '');
   cleaned = cleaned.replace(PATTERNS.lowPriority, '');
 
-  // Remove text-based due date
   cleaned = cleaned.replace(PATTERNS.textDueDate, '');
 
-  // Clean up extra whitespace
+  // Remove project metadata
+  cleaned = cleaned.replace(PATTERNS.project, '');
+
   cleaned = cleaned.replace(/\s+/g, ' ').trim();
 
   return cleaned;
@@ -170,21 +184,27 @@ function escapeRegex(str: string): string {
 }
 
 /**
- * Build an Obsidian task line from parsed task data
+ * Build an Obsidian task line from parsed task data.
+ * Only adds the sync tag to top-level tasks (indentLevel === 0).
  */
 export function buildTaskLine(task: ParsedObsidianTask, syncTag: string): string {
+  const indent = '  '.repeat(task.indentLevel);
   const checkbox = task.isCompleted ? '[x]' : '[ ]';
-  let line = `- ${checkbox} ${task.content}`;
+  let line = `${indent}- ${checkbox} ${task.content}`;
 
-  // Add sync tag
-  line += ` ${syncTag}`;
+  // Only top-level tasks carry the sync tag; subtasks inherit from parent
+  if (task.indentLevel === 0) {
+    line += ` ${syncTag}`;
+  }
 
-  // Add other labels
   for (const label of task.labels) {
     line += ` #${label}`;
   }
 
-  // Add priority emoji (Tasks plugin format)
+  if (task.projectName) {
+    line += ` 📁 ${task.projectName}`;
+  }
+
   if (task.priority === TodoistPriority.HIGH) {
     line += ' ⏫';
   } else if (task.priority === TodoistPriority.MEDIUM) {
@@ -193,12 +213,10 @@ export function buildTaskLine(task: ParsedObsidianTask, syncTag: string): string
     line += ' 🔽';
   }
 
-  // Add due date (Tasks plugin format)
   if (task.dueDate) {
     line += ` 📅 ${task.dueDate}`;
   }
 
-  // Add Todoist ID comment
   if (task.todoistId) {
     line += ` <!-- todoist-id:${task.todoistId} -->`;
   }
@@ -210,9 +228,7 @@ export function buildTaskLine(task: ParsedObsidianTask, syncTag: string): string
  * Update an existing task line with new Todoist ID
  */
 export function addTodoistIdToLine(line: string, todoistId: string): string {
-  // Remove existing ID if present
   let updated = line.replace(PATTERNS.todoistId, '').trim();
-  // Add new ID at the end
   updated += ` <!-- todoist-id:${todoistId} -->`;
   return updated;
 }
@@ -229,7 +245,8 @@ export function updateTaskCompletion(line: string, isCompleted: boolean): string
 }
 
 /**
- * Parse all tasks from file content
+ * Parse all tasks from file content, including subtask hierarchy.
+ * Subtasks inherit sync from their parent -- they don't need the sync tag.
  */
 export function parseTasksFromContent(
   content: string,
@@ -240,13 +257,67 @@ export function parseTasksFromContent(
   const lines = content.split('\n');
   const tasks: ParsedObsidianTask[] = [];
 
+  // Stack tracks parent tasks at each indent level: [indentLevel, task]
+  const parentStack: { indentLevel: number; task: ParsedObsidianTask }[] = [];
+
   for (let i = 0; i < lines.length; i++) {
-    const task = parseTaskLine(lines[i], i, filePath, syncTag, lastModified);
+    const line = lines[i];
+    const lineIndent = getIndentLevel(line);
+
+    // First, try parsing as a tagged task (has the sync tag itself)
+    let task = parseTaskLine(line, i, filePath, syncTag, lastModified, true);
+
     if (task) {
-      // Check for description in subsequent indented lines
+      // Pop stack entries at same or deeper indent (new top-level or sibling)
+      while (parentStack.length > 0 && parentStack[parentStack.length - 1].indentLevel >= lineIndent) {
+        parentStack.pop();
+      }
+
+      // If there's a parent on the stack, this tagged task is also a child
+      if (parentStack.length > 0) {
+        const parent = parentStack[parentStack.length - 1].task;
+        task.parentId = parent.todoistId;
+      }
+
       const description = extractDescription(lines, i);
       task.description = description;
       tasks.push(task);
+
+      parentStack.push({ indentLevel: lineIndent, task });
+      continue;
+    }
+
+    // If it's not a tagged task, check if it's a subtask of a synced parent
+    if (parentStack.length > 0) {
+      // Pop stack entries at same or deeper indent
+      while (parentStack.length > 0 && parentStack[parentStack.length - 1].indentLevel >= lineIndent) {
+        parentStack.pop();
+      }
+
+      if (parentStack.length > 0) {
+        // Parse without requiring the sync tag (subtask inherits)
+        task = parseTaskLine(line, i, filePath, syncTag, lastModified, false);
+
+        if (task) {
+          const parent = parentStack[parentStack.length - 1].task;
+          task.parentId = parent.todoistId;
+
+          const description = extractDescription(lines, i);
+          task.description = description;
+          tasks.push(task);
+
+          parentStack.push({ indentLevel: lineIndent, task });
+          continue;
+        }
+      }
+    }
+
+    // Non-task line: if it's at base indentation, clear the parent stack
+    if (line.trim() === '' || (line.trim() && lineIndent === 0 && !PATTERNS.task.test(line))) {
+      // Only clear if it's a non-indented non-task line
+      if (lineIndent === 0 && line.trim() !== '') {
+        parentStack.length = 0;
+      }
     }
   }
 
@@ -254,7 +325,7 @@ export function parseTasksFromContent(
 }
 
 /**
- * Extract description from indented lines following a task
+ * Extract description from indented lines following a task (stops at subtask lines)
  */
 function extractDescription(lines: string[], taskIndex: number): string {
   const taskLine = lines[taskIndex];
@@ -265,17 +336,15 @@ function extractDescription(lines: string[], taskIndex: number): string {
     const line = lines[i];
     const lineIndent = line.match(/^(\s*)/)?.[1].length ?? 0;
 
-    // Stop if we hit a line with same or less indentation
     if (line.trim() && lineIndent <= taskIndent) {
       break;
     }
 
-    // Skip if it's another task
+    // Stop at subtask lines
     if (PATTERNS.task.test(line)) {
       break;
     }
 
-    // Add non-empty lines to description
     if (line.trim()) {
       descriptionLines.push(line.trim());
     }
@@ -288,8 +357,7 @@ function extractDescription(lines: string[], taskIndex: number): string {
  * Generate a content hash for change detection
  */
 export function generateContentHash(task: ParsedObsidianTask): string {
-  const data = `${task.content}|${task.isCompleted}|${task.dueDate ?? ''}|${task.priority}|${task.labels.join(',')}`;
-  // Simple hash function
+  const data = `${task.content}|${task.isCompleted}|${task.dueDate ?? ''}|${task.priority}|${task.labels.join(',')}|${task.parentId ?? ''}|${task.projectId ?? ''}`;
   let hash = 0;
   for (let i = 0; i < data.length; i++) {
     const char = data.charCodeAt(i);

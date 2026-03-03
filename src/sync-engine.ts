@@ -1,5 +1,4 @@
 import { App, TFile } from 'obsidian';
-import { Task } from '@doist/todoist-api-typescript';
 import { TodoistService } from './todoist-service';
 import {
   parseTasksFromContent,
@@ -15,6 +14,7 @@ import {
   SyncConflict,
   TodoistSyncSettings,
   TodoistPriority,
+  TodoistTask,
 } from './types';
 
 /**
@@ -27,7 +27,6 @@ export class SyncEngine {
   private syncState: SyncState;
   private isSyncing = false;
   private pendingConflicts: SyncConflict[] = [];
-  private conflictResolver: ((conflict: SyncConflict, resolution: 'obsidian' | 'todoist') => void) | null = null;
 
   constructor(
     app: App,
@@ -41,30 +40,18 @@ export class SyncEngine {
     this.syncState = syncState;
   }
 
-  /**
-   * Update settings reference
-   */
   updateSettings(settings: TodoistSyncSettings): void {
     this.settings = settings;
   }
 
-  /**
-   * Update sync state reference
-   */
   updateSyncState(syncState: SyncState): void {
     this.syncState = syncState;
   }
 
-  /**
-   * Get current sync state
-   */
   getSyncState(): SyncState {
     return this.syncState;
   }
 
-  /**
-   * Check if sync is currently running
-   */
   isCurrentlySyncing(): boolean {
     return this.isSyncing;
   }
@@ -89,9 +76,11 @@ export class SyncEngine {
     try {
       console.debug('Todoist Sync: Starting sync...');
 
-      // Get all Todoist tasks
+      // Ensure project cache is populated for project name lookups
+      await this.todoistService.ensureProjectCache();
+
       console.debug('Todoist Sync: Fetching Todoist tasks...');
-      let todoistTasks: Task[] = [];
+      let todoistTasks: TodoistTask[] = [];
       try {
         todoistTasks = await this.todoistService.getTasks();
         console.debug(`Todoist Sync: Found ${todoistTasks.length} tasks in Todoist`);
@@ -102,17 +91,15 @@ export class SyncEngine {
         return result;
       }
 
-      const todoistTaskMap = new Map<string, Task>();
+      const todoistTaskMap = new Map<string, TodoistTask>();
       for (const task of todoistTasks) {
         todoistTaskMap.set(task.id, task);
       }
 
-      // Get all Obsidian tasks with sync tag
       console.debug('Todoist Sync: Scanning vault for tasks...');
       const obsidianTasks = await this.getAllObsidianTasks();
       console.debug(`Todoist Sync: Found ${obsidianTasks.length} tasks with ${this.settings.syncTag} tag`);
 
-      // Group tasks by Todoist ID for comparison
       const syncedObsidianTasks = new Map<string, ParsedObsidianTask>();
       const newObsidianTasks: ParsedObsidianTask[] = [];
 
@@ -126,11 +113,26 @@ export class SyncEngine {
 
       console.debug(`Todoist Sync: ${newObsidianTasks.length} new tasks to create, ${syncedObsidianTasks.size} existing tasks to sync`);
 
-      // 1. Create Todoist tasks for new Obsidian tasks
-      for (const task of newObsidianTasks) {
+      // Sort new tasks: parents first (lower indentLevel), then children.
+      // This ensures parent Todoist IDs are available when creating subtasks.
+      const sortedNewTasks = [...newObsidianTasks].sort((a, b) => a.indentLevel - b.indentLevel);
+
+      // Track newly created tasks so children can reference their Todoist IDs.
+      // Maps "filePath:lineNumber" to the created Todoist task ID.
+      const createdTaskMap = new Map<string, string>();
+
+      for (const task of sortedNewTasks) {
         try {
-          console.debug(`Todoist Sync: Creating task "${task.content}"...`);
-          await this.createTodoistTask(task);
+          // Resolve parentId: use the task's existing parentId, or look up from
+          // a task that was just created in this same sync cycle.
+          let parentId = task.parentId;
+          if (!parentId && task.indentLevel > 0) {
+            parentId = this.findParentTodoistId(task, obsidianTasks, createdTaskMap);
+          }
+
+          console.debug(`Todoist Sync: Creating task "${task.content}" (parent: ${parentId ?? 'none'})...`);
+          const todoistTask = await this.createTodoistTaskWithParent(task, parentId);
+          createdTaskMap.set(`${task.filePath}:${task.lineNumber}`, todoistTask.id);
           result.created++;
           console.debug('Todoist Sync: Task created successfully');
         } catch (error) {
@@ -139,12 +141,11 @@ export class SyncEngine {
         }
       }
 
-      // 2. Sync existing tasks
+      // Sync existing tasks
       for (const [todoistId, obsidianTask] of syncedObsidianTasks) {
         const todoistTask = todoistTaskMap.get(todoistId);
 
         if (!todoistTask) {
-          // Task was deleted in Todoist - mark as completed in Obsidian
           try {
             console.debug(`Todoist Sync: Task ${todoistId} not found in Todoist, marking completed`);
             await this.markObsidianTaskCompleted(obsidianTask);
@@ -157,7 +158,6 @@ export class SyncEngine {
           continue;
         }
 
-        // Compare and sync
         try {
           const syncResult = await this.syncExistingTask(obsidianTask, todoistTask);
           if (syncResult === 'updated') result.updated++;
@@ -169,13 +169,10 @@ export class SyncEngine {
         }
       }
 
-      // 3. Check for Todoist tasks that need to sync back to Obsidian
-      // (tasks created in Todoist that have corresponding Obsidian entries that were completed)
+      // Clean up sync state for tasks no longer found in Obsidian
       for (const [todoistId] of todoistTaskMap) {
         const syncedTask = this.syncState.tasks[todoistId];
         if (syncedTask && !syncedObsidianTasks.has(todoistId)) {
-          // Task exists in sync state but not found in Obsidian
-          // The file/line might have been deleted - remove from sync state
           delete this.syncState.tasks[todoistId];
         }
       }
@@ -191,6 +188,28 @@ export class SyncEngine {
     }
 
     return result;
+  }
+
+  /**
+   * Find the Todoist parent ID for a subtask by walking up the indent hierarchy.
+   */
+  private findParentTodoistId(
+    task: ParsedObsidianTask,
+    allTasks: ParsedObsidianTask[],
+    createdTaskMap: Map<string, string>
+  ): string | null {
+    // Look backwards through tasks in the same file for the nearest parent
+    const samefile = allTasks.filter(t => t.filePath === task.filePath && t.lineNumber < task.lineNumber);
+    for (let i = samefile.length - 1; i >= 0; i--) {
+      const candidate = samefile[i];
+      if (candidate.indentLevel < task.indentLevel) {
+        // Found the parent -- return its Todoist ID (existing or newly created)
+        if (candidate.todoistId) return candidate.todoistId;
+        const key = `${candidate.filePath}:${candidate.lineNumber}`;
+        return createdTaskMap.get(key) ?? null;
+      }
+    }
+    return null;
   }
 
   /**
@@ -219,35 +238,51 @@ export class SyncEngine {
   }
 
   /**
-   * Create a Todoist task from an Obsidian task
+   * Create a Todoist task from an Obsidian task, with optional parentId
    */
-  private async createTodoistTask(task: ParsedObsidianTask): Promise<void> {
+  private async createTodoistTaskWithParent(task: ParsedObsidianTask, parentId: string | null): Promise<TodoistTask> {
+    // Resolve project ID from project name if provided
+    let projectId = this.settings.defaultProjectId || undefined;
+    if (task.projectName) {
+      const resolvedId = this.todoistService.getProjectIdByName(task.projectName);
+      if (resolvedId) projectId = resolvedId;
+    }
+
     const todoistTask = await this.todoistService.createTask(task.content, {
-      projectId: this.settings.defaultProjectId || undefined,
+      projectId: parentId ? undefined : projectId, // Subtasks inherit project from parent
+      parentId: parentId ?? undefined,
       priority: task.priority,
       dueDate: task.dueDate ?? undefined,
       labels: task.labels,
       description: task.description,
     });
 
-    // Update Obsidian task with Todoist ID
     await this.updateObsidianTaskLine(task, (line) => addTodoistIdToLine(line, todoistTask.id));
 
-    // Add to sync state
     this.syncState.tasks[todoistTask.id] = {
       todoistId: todoistTask.id,
+      parentId: parentId,
       filePath: task.filePath,
       lineNumber: task.lineNumber,
       contentHash: generateContentHash(task),
       lastSynced: Date.now(),
       obsidianCompleted: task.isCompleted,
       todoistCompleted: todoistTask.isCompleted,
+      projectId: todoistTask.projectId,
     };
 
-    // If task is already completed in Obsidian, complete it in Todoist
     if (task.isCompleted) {
       await this.todoistService.completeTask(todoistTask.id);
     }
+
+    return todoistTask;
+  }
+
+  /**
+   * @deprecated Use createTodoistTaskWithParent instead
+   */
+  private async createTodoistTask(task: ParsedObsidianTask): Promise<void> {
+    await this.createTodoistTaskWithParent(task, task.parentId);
   }
 
   /**
@@ -255,33 +290,29 @@ export class SyncEngine {
    */
   private async syncExistingTask(
     obsidianTask: ParsedObsidianTask,
-    todoistTask: Task
+    todoistTask: TodoistTask
   ): Promise<'updated' | 'conflict' | 'completed' | 'unchanged'> {
-    // Check for completion status changes
     const obsidianCompleted = obsidianTask.isCompleted;
     const todoistCompleted = todoistTask.isCompleted;
 
     // Handle completion status sync
     if (obsidianCompleted !== todoistCompleted) {
       if (obsidianCompleted && !todoistCompleted) {
-        // Obsidian completed, Todoist not - complete in Todoist
         await this.todoistService.completeTask(todoistTask.id);
-        this.updateSyncStateTask(todoistTask.id, obsidianTask, true);
+        this.updateSyncStateTask(todoistTask.id, obsidianTask, true, todoistTask);
         return 'completed';
       } else if (!obsidianCompleted && todoistCompleted) {
-        // Todoist completed, Obsidian not - complete in Obsidian or reopen in Todoist
         if (this.settings.conflictResolution === 'todoist-wins') {
           await this.markObsidianTaskCompleted(obsidianTask);
-          this.updateSyncStateTask(todoistTask.id, obsidianTask, true);
+          this.updateSyncStateTask(todoistTask.id, obsidianTask, true, todoistTask);
           return 'completed';
         } else if (this.settings.conflictResolution === 'obsidian-wins') {
           await this.todoistService.reopenTask(todoistTask.id);
-          this.updateSyncStateTask(todoistTask.id, obsidianTask, false);
+          this.updateSyncStateTask(todoistTask.id, obsidianTask, false, todoistTask);
           return 'updated';
         } else {
-          // Ask user - for now, default to Todoist wins
           await this.markObsidianTaskCompleted(obsidianTask);
-          this.updateSyncStateTask(todoistTask.id, obsidianTask, true);
+          this.updateSyncStateTask(todoistTask.id, obsidianTask, true, todoistTask);
           return 'conflict';
         }
       }
@@ -296,32 +327,32 @@ export class SyncEngine {
     const priorityDiffers = obsidianTask.priority !== todoistPriority;
     const dueDateDiffers = obsidianTask.dueDate !== todoistDueDate;
 
-    const hasChanges = contentDiffers || priorityDiffers || dueDateDiffers;
+    // Also check if labels differ
+    const todoistLabels = (todoistTask.labels ?? []).map(l => l.toLowerCase()).sort();
+    const obsidianLabels = [...obsidianTask.labels].sort();
+    const labelsDiffer = JSON.stringify(todoistLabels) !== JSON.stringify(obsidianLabels);
+
+    const hasChanges = contentDiffers || priorityDiffers || dueDateDiffers || labelsDiffer;
 
     if (!hasChanges) {
-      // No changes, just update sync state
-      this.updateSyncStateTask(todoistTask.id, obsidianTask, obsidianCompleted);
+      this.updateSyncStateTask(todoistTask.id, obsidianTask, obsidianCompleted, todoistTask);
       return 'unchanged';
     }
 
-    // Determine which side wins
     if (this.settings.conflictResolution === 'obsidian-wins') {
-      // Update Todoist with Obsidian data
       await this.todoistService.updateTask(todoistTask.id, {
         content: obsidianTask.content,
         priority: obsidianTask.priority,
         dueString: obsidianTask.dueDate ?? undefined,
         labels: obsidianTask.labels,
       });
-      this.updateSyncStateTask(todoistTask.id, obsidianTask, obsidianCompleted);
+      this.updateSyncStateTask(todoistTask.id, obsidianTask, obsidianCompleted, todoistTask);
       return 'updated';
     } else if (this.settings.conflictResolution === 'todoist-wins') {
-      // Update Obsidian with Todoist data
       await this.updateObsidianTaskFromTodoist(obsidianTask, todoistTask);
-      this.updateSyncStateTask(todoistTask.id, obsidianTask, obsidianCompleted);
+      this.updateSyncStateTask(todoistTask.id, obsidianTask, obsidianCompleted, todoistTask);
       return 'updated';
     } else {
-      // Ask user - queue conflict
       this.pendingConflicts.push({
         todoistId: todoistTask.id,
         filePath: obsidianTask.filePath,
@@ -341,16 +372,19 @@ export class SyncEngine {
   private updateSyncStateTask(
     todoistId: string,
     obsidianTask: ParsedObsidianTask,
-    completed: boolean
+    completed: boolean,
+    todoistTask?: TodoistTask
   ): void {
     this.syncState.tasks[todoistId] = {
       todoistId,
+      parentId: todoistTask?.parentId ?? obsidianTask.parentId ?? null,
       filePath: obsidianTask.filePath,
       lineNumber: obsidianTask.lineNumber,
       contentHash: generateContentHash(obsidianTask),
       lastSynced: Date.now(),
       obsidianCompleted: completed,
       todoistCompleted: completed,
+      projectId: todoistTask?.projectId ?? obsidianTask.projectId ?? null,
     };
   }
 
@@ -359,14 +393,18 @@ export class SyncEngine {
    */
   private async updateObsidianTaskFromTodoist(
     obsidianTask: ParsedObsidianTask,
-    todoistTask: Task
+    todoistTask: TodoistTask
   ): Promise<void> {
+    const projectName = this.todoistService.getProjectName(todoistTask.projectId) ?? null;
+
     const updatedTask: ParsedObsidianTask = {
       ...obsidianTask,
       content: todoistTask.content,
       priority: todoistTask.priority as TodoistPriority,
       dueDate: TodoistService.parseDueDate(todoistTask),
       isCompleted: todoistTask.isCompleted,
+      labels: (todoistTask.labels ?? []).map(l => l.toLowerCase()),
+      projectName,
     };
 
     const newLine = buildTaskLine(updatedTask, this.settings.syncTag);
@@ -428,6 +466,101 @@ export class SyncEngine {
   }
 
   /**
+   * Import a Todoist task (and its subtasks) at the cursor position in a file.
+   * Returns the number of lines inserted.
+   */
+  async importTaskAtCursor(
+    task: TodoistTask,
+    subtasks: TodoistTask[],
+    filePath: string,
+    lineNumber: number
+  ): Promise<number> {
+    const projectName = this.todoistService.getProjectName(task.projectId) ?? null;
+
+    const parentParsed: ParsedObsidianTask = {
+      originalLine: '',
+      lineNumber,
+      filePath,
+      content: task.content,
+      isCompleted: task.isCompleted,
+      todoistId: task.id,
+      parentId: task.parentId ?? null,
+      indentLevel: 0,
+      dueDate: TodoistService.parseDueDate(task),
+      priority: task.priority as TodoistPriority,
+      labels: task.labels ?? [],
+      description: task.description ?? '',
+      projectId: task.projectId,
+      projectName,
+      lastModified: Date.now(),
+    };
+
+    const lines: string[] = [buildTaskLine(parentParsed, this.settings.syncTag)];
+
+    // Add to sync state
+    this.syncState.tasks[task.id] = {
+      todoistId: task.id,
+      parentId: task.parentId ?? null,
+      filePath,
+      lineNumber,
+      contentHash: generateContentHash(parentParsed),
+      lastSynced: Date.now(),
+      obsidianCompleted: task.isCompleted,
+      todoistCompleted: task.isCompleted,
+      projectId: task.projectId,
+    };
+
+    // Build subtask lines
+    for (let i = 0; i < subtasks.length; i++) {
+      const sub = subtasks[i];
+      const subParsed: ParsedObsidianTask = {
+        originalLine: '',
+        lineNumber: lineNumber + 1 + i,
+        filePath,
+        content: sub.content,
+        isCompleted: sub.isCompleted,
+        todoistId: sub.id,
+        parentId: sub.parentId ?? task.id,
+        indentLevel: 1,
+        dueDate: TodoistService.parseDueDate(sub),
+        priority: sub.priority as TodoistPriority,
+        labels: sub.labels ?? [],
+        description: sub.description ?? '',
+        projectId: sub.projectId,
+        projectName: null,
+        lastModified: Date.now(),
+      };
+
+      lines.push(buildTaskLine(subParsed, this.settings.syncTag));
+
+      this.syncState.tasks[sub.id] = {
+        todoistId: sub.id,
+        parentId: sub.parentId ?? task.id,
+        filePath,
+        lineNumber: lineNumber + 1 + i,
+        contentHash: generateContentHash(subParsed),
+        lastSynced: Date.now(),
+        obsidianCompleted: sub.isCompleted,
+        todoistCompleted: sub.isCompleted,
+        projectId: sub.projectId,
+      };
+    }
+
+    // Insert lines into the file
+    const file = this.app.vault.getAbstractFileByPath(filePath);
+    if (!(file instanceof TFile)) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+
+    const fileContent = await this.app.vault.read(file);
+    const fileLines = fileContent.split('\n');
+    fileLines.splice(lineNumber, 0, ...lines);
+    await this.app.vault.modify(file, fileLines.join('\n'));
+
+    return lines.length;
+  }
+
+  /**
    * Create a Todoist task from the current editor line
    */
   async createTaskFromLine(
@@ -439,7 +572,6 @@ export class SyncEngine {
       return { success: false, message: 'Todoist API not configured. Please add your API key in settings.' };
     }
 
-    // Check if line is a task
     const taskMatch = lineContent.match(/^(\s*)[-*]\s+\[([ xX])\]\s+(.*)$/);
     
     let content: string;
@@ -447,34 +579,28 @@ export class SyncEngine {
     let prefix = '';
 
     if (taskMatch) {
-      // It's already a task
       isTask = true;
       prefix = taskMatch[1];
       content = taskMatch[3];
       
-      // Check if already synced
       const todoistIdMatch = content.match(/<!--\s*todoist-id:\s*(\d+)\s*-->/);
       if (todoistIdMatch) {
         return { success: false, message: 'Task is already synced with Todoist.' };
       }
 
-      // Check if it has the sync tag
       const syncTagPattern = new RegExp(this.settings.syncTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
       if (!syncTagPattern.test(content)) {
-        // Add sync tag
         content = content.trim() + ' ' + this.settings.syncTag;
       }
     } else {
-      // Convert line to a task
       const trimmed = lineContent.trim();
       if (!trimmed) {
         return { success: false, message: 'Cannot create task from empty line.' };
       }
       
-      // Remove bullet points (-, *, +) or numbered list markers (1., 2., etc.)
       let cleanedContent = trimmed
-        .replace(/^[-*+]\s+/, '')           // Remove -, *, + bullets
-        .replace(/^\d+\.\s+/, '')           // Remove numbered list markers
+        .replace(/^[-*+]\s+/, '')
+        .replace(/^\d+\.\s+/, '')
         .trim();
       
       if (!cleanedContent) {
@@ -485,22 +611,20 @@ export class SyncEngine {
       prefix = lineContent.match(/^(\s*)/)?.[1] ?? '';
     }
 
-    // Clean content for Todoist (remove hashtags and metadata)
     const cleanContent = content
       .replace(new RegExp(this.settings.syncTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '')
       .replace(/#[a-zA-Z0-9_-]+/g, '')
       .replace(/📅\s*\d{4}-\d{2}-\d{2}/g, '')
       .replace(/⏫|🔼|🔽/g, '')
+      .replace(/📁\s*\S+/g, '')
       .replace(/\s+/g, ' ')
       .trim();
 
     try {
-      // Create task in Todoist
       const todoistTask = await this.todoistService.createTask(cleanContent, {
         projectId: this.settings.defaultProjectId || undefined,
       });
 
-      // Update the line in the file
       const file = this.app.vault.getAbstractFileByPath(filePath);
       if (!(file instanceof TFile)) {
         return { success: false, message: 'File not found.' };
@@ -511,29 +635,27 @@ export class SyncEngine {
 
       let newLine: string;
       if (isTask) {
-        // Update existing task with Todoist ID
         newLine = addTodoistIdToLine(lineContent, todoistTask.id);
-        // Add sync tag if not present
         if (!new RegExp(this.settings.syncTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(newLine)) {
           newLine = newLine.replace(/(\s*)<!--/, ` ${this.settings.syncTag}$1<!--`);
         }
       } else {
-        // Create new task line
         newLine = `${prefix}- [ ] ${content} <!-- todoist-id:${todoistTask.id} -->`;
       }
 
       lines[lineNumber] = newLine;
       await this.app.vault.modify(file, lines.join('\n'));
 
-      // Add to sync state
       this.syncState.tasks[todoistTask.id] = {
         todoistId: todoistTask.id,
+        parentId: null,
         filePath,
         lineNumber,
         contentHash: '',
         lastSynced: Date.now(),
         obsidianCompleted: false,
         todoistCompleted: false,
+        projectId: todoistTask.projectId,
       };
 
       return { success: true, message: `Created Todoist task: ${cleanContent}` };
@@ -543,16 +665,10 @@ export class SyncEngine {
     }
   }
 
-  /**
-   * Get pending conflicts for user resolution
-   */
   getPendingConflicts(): SyncConflict[] {
     return this.pendingConflicts;
   }
 
-  /**
-   * Clear pending conflicts
-   */
   clearPendingConflicts(): void {
     this.pendingConflicts = [];
   }

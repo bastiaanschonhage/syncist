@@ -2,6 +2,8 @@ import { App, Editor, MarkdownView, Notice, Plugin } from 'obsidian';
 import { TodoistSyncSettingTab } from './settings';
 import { TodoistService } from './todoist-service';
 import { SyncEngine } from './sync-engine';
+import { ImportTaskModal } from './import-modal';
+import { renderQueryBlock } from './query-renderer';
 import {
   TodoistSyncSettings,
   DEFAULT_SETTINGS,
@@ -53,6 +55,11 @@ export default class TodoistSyncPlugin extends Plugin {
 
     // Register commands
     this.registerCommands();
+
+    // Register syncist code block processor for query blocks
+    this.registerMarkdownCodeBlockProcessor('syncist', (source, el) => {
+      renderQueryBlock(source, el, this);
+    });
 
     // Start sync interval
     this.startSyncInterval();
@@ -130,12 +137,56 @@ export default class TodoistSyncPlugin extends Plugin {
       },
     });
 
+    // Command: Import task from Todoist
+    this.addCommand({
+      id: 'import-todoist-task',
+      name: 'Import task from Todoist',
+      editorCallback: async (editor: Editor, view: MarkdownView) => {
+        if (!this.settings.apiToken) {
+          new Notice('Please configure your API token in the settings.');
+          return;
+        }
+
+        const filePath = view.file?.path;
+        if (!filePath) {
+          new Notice('Cannot determine file path');
+          return;
+        }
+
+        const cursor = editor.getCursor();
+
+        new ImportTaskModal(this.app, this.todoistService, (task, subtasks) => {
+          void (async () => {
+            try {
+              const linesInserted = await this.syncEngine.importTaskAtCursor(
+                task,
+                subtasks,
+                filePath,
+                cursor.line
+              );
+
+              const newContent = await this.app.vault.read(view.file!);
+              editor.setValue(newContent);
+              editor.setCursor({ line: cursor.line + linesInserted, ch: 0 });
+
+              await this.saveSyncState();
+
+              const subtaskMsg = subtasks.length > 0 ? ` (+${subtasks.length} subtask${subtasks.length > 1 ? 's' : ''})` : '';
+              new Notice(`Imported: ${task.content}${subtaskMsg}`);
+            } catch (error) {
+              console.error('Failed to import task:', error);
+              new Notice(`Failed to import task: ${error}`);
+            }
+          })();
+        }).open();
+      },
+    });
+
     // Command: Open Todoist Sync settings
     this.addCommand({
       id: 'open-settings',
       name: 'Open settings',
       callback: () => {
-        // Open settings tab - using internal Obsidian API
         const appWithSettings = this.app as App & { 
           setting?: { open: () => void; openTabById: (id: string) => void } 
         };

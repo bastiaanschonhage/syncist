@@ -1,5 +1,3 @@
-import { Task as TodoistTask } from '@doist/todoist-api-typescript';
-
 /**
  * Plugin settings interface
  */
@@ -43,6 +41,74 @@ export enum TodoistPriority {
   HIGH = 4,
 }
 
+// ─── Todoist API v1 types ────────────────────────────────────────────
+
+/**
+ * Todoist task as returned by the API v1 (snake_case).
+ * We normalize to camelCase on ingestion via TodoistTask.
+ */
+export interface TodoistTask {
+  id: string;
+  content: string;
+  description: string;
+  projectId: string;
+  parentId: string | null;
+  priority: number;
+  due: { date: string; string?: string; isRecurring?: boolean } | null;
+  labels: string[];
+  isCompleted: boolean;
+  createdAt: string;
+  url: string;
+}
+
+/** Raw task shape from the Todoist API v1 */
+export interface TodoistApiRawTask {
+  id: string;
+  content: string;
+  description: string;
+  project_id: string;
+  parent_id: string | null;
+  priority: number;
+  due: { date: string; string?: string; is_recurring?: boolean } | null;
+  labels: string[];
+  checked: boolean;
+  added_at: string;
+}
+
+/** Convert a raw API task to our normalized shape */
+export function normalizeTask(raw: TodoistApiRawTask): TodoistTask {
+  return {
+    id: raw.id,
+    content: raw.content,
+    description: raw.description,
+    projectId: raw.project_id,
+    parentId: raw.parent_id,
+    priority: raw.priority,
+    due: raw.due,
+    labels: raw.labels ?? [],
+    isCompleted: raw.checked,
+    createdAt: raw.added_at,
+    url: `https://todoist.com/app/task/${raw.id}`,
+  };
+}
+
+/** Raw project shape from the Todoist API v1 */
+export interface TodoistApiRawProject {
+  id: string;
+  name: string;
+  inbox_project?: boolean;
+}
+
+/**
+ * Paginated response from Todoist API v1
+ */
+export interface TodoistPaginatedResponse<T> {
+  results: T[];
+  next_cursor?: string | null;
+}
+
+// ─── Internal types ──────────────────────────────────────────────────
+
 /**
  * Parsed task from Obsidian markdown
  */
@@ -59,6 +125,10 @@ export interface ParsedObsidianTask {
   isCompleted: boolean;
   /** Todoist task ID if already synced */
   todoistId: string | null;
+  /** Todoist parent task ID (for subtasks) */
+  parentId: string | null;
+  /** Indentation level (0 = top-level, 1 = first indent, etc.) */
+  indentLevel: number;
   /** Due date in YYYY-MM-DD format */
   dueDate: string | null;
   /** Priority level (1-4) */
@@ -67,6 +137,10 @@ export interface ParsedObsidianTask {
   labels: string[];
   /** Description (from indented content below task) */
   description: string;
+  /** Project ID from Todoist */
+  projectId: string | null;
+  /** Project name (for display) */
+  projectName: string | null;
   /** Last modification timestamp (from file) */
   lastModified: number;
 }
@@ -77,6 +151,8 @@ export interface ParsedObsidianTask {
 export interface SyncedTask {
   /** Todoist task ID */
   todoistId: string;
+  /** Todoist parent task ID (for subtasks) */
+  parentId: string | null;
   /** File path in Obsidian */
   filePath: string;
   /** Line number in file */
@@ -89,6 +165,8 @@ export interface SyncedTask {
   obsidianCompleted: boolean;
   /** Whether completed in Todoist */
   todoistCompleted: boolean;
+  /** Project ID */
+  projectId: string | null;
 }
 
 /**
@@ -101,16 +179,13 @@ export interface SyncState {
   lastFullSync: number;
 }
 
-/**
- * Default sync state
- */
 export const DEFAULT_SYNC_STATE: SyncState = {
   tasks: {},
   lastFullSync: 0,
 };
 
 /**
- * Todoist project info
+ * Todoist project info (normalized)
  */
 export interface TodoistProject {
   id: string;
@@ -123,15 +198,16 @@ export interface TodoistProject {
  */
 export interface TaskOptions {
   projectId?: string;
+  parentId?: string;
   priority?: TodoistPriority;
   dueDate?: string;
   labels?: string[];
   description?: string;
 }
 
-/**
- * Result of a sync operation
- */
+/** Project name cache: maps Todoist project ID to project name */
+export type ProjectCache = Record<string, string>;
+
 export interface SyncResult {
   created: number;
   updated: number;
@@ -140,9 +216,6 @@ export interface SyncResult {
   errors: string[];
 }
 
-/**
- * Conflict information for user prompt
- */
 export interface SyncConflict {
   todoistId: string;
   filePath: string;
@@ -152,25 +225,3 @@ export interface SyncConflict {
   obsidianCompleted: boolean;
   todoistCompleted: boolean;
 }
-
-/**
- * Todoist API paginated response format (v3)
- */
-export interface TodoistPaginatedResponse<T> {
-  results: T[];
-  nextCursor?: string | null;
-}
-
-/**
- * Todoist project from API
- */
-export interface TodoistApiProject {
-  id: string;
-  name: string;
-  isInboxProject?: boolean;
-}
-
-/**
- * Re-export Todoist task type for convenience
- */
-export type { TodoistTask };
