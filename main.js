@@ -1638,7 +1638,7 @@ var TodoistSyncPlugin = class extends import_obsidian6.Plugin {
     this.addCommand({
       id: "import-todoist-task",
       name: "Import task from Todoist",
-      editorCallback: async (editor, view) => {
+      editorCallback: (editor, view) => {
         var _a;
         if (!this.settings.apiToken) {
           new import_obsidian6.Notice("Please configure your API token in the settings.");
