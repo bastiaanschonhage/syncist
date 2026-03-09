@@ -125,9 +125,14 @@ export default class TodoistSyncPlugin extends Plugin {
           return;
         }
 
+        if (this.syncEngine.isCurrentlySyncing()) {
+          new Notice('Sync already in progress, please wait.');
+          return;
+        }
+
         new Notice('Starting sync...');
         const result = await this.syncNow();
-        
+
         const message = `Sync complete: ${result.created} created, ${result.updated} updated, ${result.completed} completed`;
         new Notice(message);
 

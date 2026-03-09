@@ -283,7 +283,18 @@ export class TodoistService {
       const resp = await requestUrl({
         url: `${API_BASE}/tasks/filter?${params.toString()}`,
         headers: this.headers(),
+        throw: false,
       });
+
+      if (resp.status === 400) {
+        const body = resp.json as { error?: string } | null;
+        const detail = body?.error ?? 'invalid filter expression';
+        throw new Error(`Invalid filter: ${detail}`);
+      }
+
+      if (resp.status !== 200) {
+        throw new Error(`Request failed, status ${resp.status}`);
+      }
 
       const data = resp.json as { items?: TodoistApiRawTask[]; results?: TodoistApiRawTask[]; next_cursor?: string };
       const rawItems = data.items ?? data.results ?? [];

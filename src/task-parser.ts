@@ -26,11 +26,28 @@ const PATTERNS = {
 
 /**
  * Compute indentation level from leading whitespace.
- * Uses 2-space increments (common in Obsidian).
+ * Tabs count as one level each (Obsidian default); spaces use 2-per-level.
+ * Mixed indentation is handled character by character.
  */
 function getIndentLevel(line: string): number {
-  const leadingSpaces = line.match(/^(\s*)/)?.[1].length ?? 0;
-  return Math.floor(leadingSpaces / 2);
+  const leading = line.match(/^(\s*)/)?.[1] ?? '';
+  let level = 0;
+  let i = 0;
+  while (i < leading.length) {
+    if (leading[i] === '\t') {
+      level++;
+      i++;
+    } else {
+      // Count a run of spaces, 2 per level
+      let spaces = 0;
+      while (i < leading.length && leading[i] === ' ') {
+        spaces++;
+        i++;
+      }
+      level += Math.floor(spaces / 2);
+    }
+  }
+  return level;
 }
 
 /**
@@ -136,8 +153,9 @@ function extractLabels(content: string, syncTag: string): string[] {
   
   let match;
   while ((match = PATTERNS.hashtag.exec(content)) !== null) {
-    const tag = match[1].toLowerCase();
-    if (tag !== syncTagName) {
+    // Preserve original case so Todoist label names are matched exactly.
+    const tag = match[1];
+    if (tag.toLowerCase() !== syncTagName) {
       labels.push(tag);
     }
   }
@@ -171,6 +189,11 @@ function cleanTaskContent(content: string, syncTag: string): string {
   // Remove project metadata
   cleaned = cleaned.replace(PATTERNS.project, '');
 
+  // Remove all remaining hashtag labels (they are synced as Todoist labels,
+  // not part of the task title). Use a fresh regex to avoid lastIndex issues
+  // with the shared global PATTERNS.hashtag.
+  cleaned = cleaned.replace(/#[a-zA-Z0-9_-]+/g, '');
+
   cleaned = cleaned.replace(/\s+/g, ' ').trim();
 
   return cleaned;
@@ -188,7 +211,7 @@ function escapeRegex(str: string): string {
  * Only adds the sync tag to top-level tasks (indentLevel === 0).
  */
 export function buildTaskLine(task: ParsedObsidianTask, syncTag: string): string {
-  const indent = '  '.repeat(task.indentLevel);
+  const indent = '\t'.repeat(task.indentLevel);
   const checkbox = task.isCompleted ? '[x]' : '[ ]';
   let line = `${indent}- ${checkbox} ${task.content}`;
 
@@ -228,8 +251,11 @@ export function buildTaskLine(task: ParsedObsidianTask, syncTag: string): string
  * Update an existing task line with new Todoist ID
  */
 export function addTodoistIdToLine(line: string, todoistId: string): string {
-  let updated = line.replace(/<!--\s*todoist-id:\s*[\w]+\s*-->/g, '').trim();
-  updated += ` <!-- todoist-id:${todoistId} -->`;
+  // Preserve leading whitespace (indentation) — only trim the trailing end
+  const leadingWhitespace = line.match(/^(\s*)/)?.[1] ?? '';
+  const stripped = line.replace(/<!--\s*todoist-id:\s*[\w]+\s*-->/g, '').trimEnd();
+  const withoutLeading = stripped.trimStart();
+  const updated = `${leadingWhitespace}${withoutLeading} <!-- todoist-id:${todoistId} -->`;
   return updated;
 }
 
@@ -357,7 +383,12 @@ function extractDescription(lines: string[], taskIndex: number): string {
  * Generate a content hash for change detection
  */
 export function generateContentHash(task: ParsedObsidianTask): string {
-  const data = `${task.content}|${task.isCompleted}|${task.dueDate ?? ''}|${task.priority}|${task.labels.join(',')}|${task.parentId ?? ''}|${task.projectId ?? ''}`;
+  // Only hash user-editable fields: content, completion, due date, priority,
+  // and labels. Structural fields (parentId, projectId) are excluded because
+  // they differ between the Obsidian and Todoist representations and would
+  // cause false positives in change detection.
+  const sortedLabels = [...task.labels].sort().join(',');
+  const data = `${task.content}|${task.isCompleted}|${task.dueDate ?? ''}|${task.priority}|${sortedLabels}`;
   let hash = 0;
   for (let i = 0; i < data.length; i++) {
     const char = data.charCodeAt(i);

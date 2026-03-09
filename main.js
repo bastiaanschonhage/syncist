@@ -461,7 +461,7 @@ var TodoistService = class {
     }
   }
   async getFilteredTasks(filter) {
-    var _a, _b, _c;
+    var _a, _b, _c, _d;
     if (!this.apiToken)
       throw new Error("Todoist API not initialized");
     const allTasks = [];
@@ -472,14 +472,23 @@ var TodoistService = class {
         params.set("cursor", cursor);
       const resp = await (0, import_obsidian2.requestUrl)({
         url: `${API_BASE}/tasks/filter?${params.toString()}`,
-        headers: this.headers()
+        headers: this.headers(),
+        throw: false
       });
+      if (resp.status === 400) {
+        const body = resp.json;
+        const detail = (_a = body == null ? void 0 : body.error) != null ? _a : "invalid filter expression";
+        throw new Error(`Invalid filter: ${detail}`);
+      }
+      if (resp.status !== 200) {
+        throw new Error(`Request failed, status ${resp.status}`);
+      }
       const data = resp.json;
-      const rawItems = (_b = (_a = data.items) != null ? _a : data.results) != null ? _b : [];
+      const rawItems = (_c = (_b = data.items) != null ? _b : data.results) != null ? _c : [];
       for (const raw of rawItems) {
         allTasks.push(normalizeTask(raw));
       }
-      cursor = (_c = data.next_cursor) != null ? _c : null;
+      cursor = (_d = data.next_cursor) != null ? _d : null;
     } while (cursor);
     return allTasks;
   }
@@ -522,8 +531,23 @@ var PATTERNS = {
 };
 function getIndentLevel(line) {
   var _a, _b;
-  const leadingSpaces = (_b = (_a = line.match(/^(\s*)/)) == null ? void 0 : _a[1].length) != null ? _b : 0;
-  return Math.floor(leadingSpaces / 2);
+  const leading = (_b = (_a = line.match(/^(\s*)/)) == null ? void 0 : _a[1]) != null ? _b : "";
+  let level = 0;
+  let i = 0;
+  while (i < leading.length) {
+    if (leading[i] === "	") {
+      level++;
+      i++;
+    } else {
+      let spaces = 0;
+      while (i < leading.length && leading[i] === " ") {
+        spaces++;
+        i++;
+      }
+      level += Math.floor(spaces / 2);
+    }
+  }
+  return level;
 }
 function parseTaskLine(line, lineNumber, filePath, syncTag, lastModified, requireSyncTag = true) {
   const match = line.match(PATTERNS.task);
@@ -595,8 +619,8 @@ function extractLabels(content, syncTag) {
   const syncTagName = syncTag.replace(/^#/, "").toLowerCase();
   let match;
   while ((match = PATTERNS.hashtag.exec(content)) !== null) {
-    const tag = match[1].toLowerCase();
-    if (tag !== syncTagName) {
+    const tag = match[1];
+    if (tag.toLowerCase() !== syncTagName) {
       labels.push(tag);
     }
   }
@@ -617,6 +641,7 @@ function cleanTaskContent(content, syncTag) {
   cleaned = cleaned.replace(PATTERNS.lowPriority, "");
   cleaned = cleaned.replace(PATTERNS.textDueDate, "");
   cleaned = cleaned.replace(PATTERNS.project, "");
+  cleaned = cleaned.replace(/#[a-zA-Z0-9_-]+/g, "");
   cleaned = cleaned.replace(/\s+/g, " ").trim();
   return cleaned;
 }
@@ -624,7 +649,7 @@ function escapeRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 function buildTaskLine(task, syncTag) {
-  const indent = "  ".repeat(task.indentLevel);
+  const indent = "	".repeat(task.indentLevel);
   const checkbox = task.isCompleted ? "[x]" : "[ ]";
   let line = `${indent}- ${checkbox} ${task.content}`;
   if (task.indentLevel === 0) {
@@ -652,8 +677,11 @@ function buildTaskLine(task, syncTag) {
   return line;
 }
 function addTodoistIdToLine(line, todoistId) {
-  let updated = line.replace(/<!--\s*todoist-id:\s*[\w]+\s*-->/g, "").trim();
-  updated += ` <!-- todoist-id:${todoistId} -->`;
+  var _a, _b;
+  const leadingWhitespace = (_b = (_a = line.match(/^(\s*)/)) == null ? void 0 : _a[1]) != null ? _b : "";
+  const stripped = line.replace(/<!--\s*todoist-id:\s*[\w]+\s*-->/g, "").trimEnd();
+  const withoutLeading = stripped.trimStart();
+  const updated = `${leadingWhitespace}${withoutLeading} <!-- todoist-id:${todoistId} -->`;
   return updated;
 }
 function updateTaskCompletion(line, isCompleted) {
@@ -731,8 +759,9 @@ function extractDescription(lines, taskIndex) {
   return descriptionLines.join("\n");
 }
 function generateContentHash(task) {
-  var _a, _b, _c;
-  const data = `${task.content}|${task.isCompleted}|${(_a = task.dueDate) != null ? _a : ""}|${task.priority}|${task.labels.join(",")}|${(_b = task.parentId) != null ? _b : ""}|${(_c = task.projectId) != null ? _c : ""}`;
+  var _a;
+  const sortedLabels = [...task.labels].sort().join(",");
+  const data = `${task.content}|${task.isCompleted}|${(_a = task.dueDate) != null ? _a : ""}|${task.priority}|${sortedLabels}`;
   let hash = 0;
   for (let i = 0; i < data.length; i++) {
     const char = data.charCodeAt(i);
@@ -811,6 +840,7 @@ var SyncEngine = class {
       console.debug(`Todoist Sync: ${newObsidianTasks.length} new tasks to create, ${syncedObsidianTasks.size} existing tasks to sync`);
       const sortedNewTasks = [...newObsidianTasks].sort((a, b) => a.indentLevel - b.indentLevel);
       const createdTaskMap = /* @__PURE__ */ new Map();
+      const newlyCreatedIds = /* @__PURE__ */ new Set();
       for (const task of sortedNewTasks) {
         try {
           let parentId = task.parentId;
@@ -820,6 +850,7 @@ var SyncEngine = class {
           console.debug(`Todoist Sync: Creating task "${task.content}" (parent: ${parentId != null ? parentId : "none"})...`);
           const todoistTask = await this.createTodoistTaskWithParent(task, parentId);
           createdTaskMap.set(`${task.filePath}:${task.lineNumber}`, todoistTask.id);
+          newlyCreatedIds.add(todoistTask.id);
           result.created++;
           console.debug("Todoist Sync: Task created successfully");
         } catch (error) {
@@ -854,9 +885,9 @@ var SyncEngine = class {
           console.error("Todoist Sync: Failed to sync existing task:", error);
         }
       }
-      for (const [todoistId] of todoistTaskMap) {
-        const syncedTask = this.syncState.tasks[todoistId];
-        if (syncedTask && !syncedObsidianTasks.has(todoistId)) {
+      for (const todoistId of Object.keys(this.syncState.tasks)) {
+        if (!syncedObsidianTasks.has(todoistId) && !newlyCreatedIds.has(todoistId)) {
+          console.debug(`Todoist Sync: Removing stale sync state entry for ${todoistId}`);
           delete this.syncState.tasks[todoistId];
         }
       }
@@ -956,7 +987,7 @@ var SyncEngine = class {
    * Sync an existing task between Obsidian and Todoist
    */
   async syncExistingTask(obsidianTask, todoistTask) {
-    var _a, _b;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i;
     const obsidianCompleted = obsidianTask.isCompleted;
     const todoistCompleted = todoistTask.isCompleted;
     if (obsidianCompleted !== todoistCompleted) {
@@ -986,19 +1017,56 @@ var SyncEngine = class {
     const contentDiffers = obsidianTask.content !== todoistContent;
     const priorityDiffers = obsidianTask.priority !== todoistPriority;
     const dueDateDiffers = obsidianTask.dueDate !== todoistDueDate;
-    const todoistLabels = ((_a = todoistTask.labels) != null ? _a : []).map((l) => l.toLowerCase()).sort();
+    const todoistLabels = [...(_a = todoistTask.labels) != null ? _a : []].sort();
     const obsidianLabels = [...obsidianTask.labels].sort();
     const labelsDiffer = JSON.stringify(todoistLabels) !== JSON.stringify(obsidianLabels);
-    const hasChanges = contentDiffers || priorityDiffers || dueDateDiffers || labelsDiffer;
+    const todoistProjectName = (_b = this.todoistService.getProjectName(todoistTask.projectId)) != null ? _b : null;
+    const projectDiffers = todoistProjectName !== ((_c = obsidianTask.projectName) != null ? _c : null);
+    const hasChanges = contentDiffers || priorityDiffers || dueDateDiffers || labelsDiffer || projectDiffers;
     if (!hasChanges) {
       this.updateSyncStateTask(todoistTask.id, obsidianTask, obsidianCompleted, todoistTask);
       return "unchanged";
+    }
+    const storedHash = (_e = (_d = this.syncState.tasks[todoistTask.id]) == null ? void 0 : _d.contentHash) != null ? _e : "";
+    const currentObsidianHash = generateContentHash(obsidianTask);
+    const todoistAsObsidian = {
+      ...obsidianTask,
+      content: todoistContent,
+      priority: todoistPriority,
+      dueDate: todoistDueDate,
+      labels: (_f = todoistTask.labels) != null ? _f : [],
+      isCompleted: todoistTask.isCompleted,
+      parentId: (_g = todoistTask.parentId) != null ? _g : null,
+      projectId: todoistTask.projectId
+    };
+    const currentTodoistHash = generateContentHash(todoistAsObsidian);
+    const obsidianChanged = currentObsidianHash !== storedHash;
+    const todoistChanged = currentTodoistHash !== storedHash;
+    if (projectDiffers && !obsidianChanged && !todoistChanged) {
+      await this.updateObsidianTaskFromTodoist(obsidianTask, todoistTask);
+      this.updateSyncStateTask(todoistTask.id, obsidianTask, obsidianCompleted, todoistTask);
+      return "updated";
+    }
+    if (obsidianChanged && !todoistChanged) {
+      await this.todoistService.updateTask(todoistTask.id, {
+        content: obsidianTask.content,
+        priority: obsidianTask.priority,
+        dueString: (_h = obsidianTask.dueDate) != null ? _h : void 0,
+        labels: obsidianTask.labels
+      });
+      this.updateSyncStateTask(todoistTask.id, obsidianTask, obsidianCompleted, todoistTask);
+      return "updated";
+    }
+    if (todoistChanged && !obsidianChanged) {
+      await this.updateObsidianTaskFromTodoist(obsidianTask, todoistTask);
+      this.updateSyncStateTask(todoistTask.id, obsidianTask, obsidianCompleted, todoistTask);
+      return "updated";
     }
     if (this.settings.conflictResolution === "obsidian-wins") {
       await this.todoistService.updateTask(todoistTask.id, {
         content: obsidianTask.content,
         priority: obsidianTask.priority,
-        dueString: (_b = obsidianTask.dueDate) != null ? _b : void 0,
+        dueString: (_i = obsidianTask.dueDate) != null ? _i : void 0,
         labels: obsidianTask.labels
       });
       this.updateSyncStateTask(todoistTask.id, obsidianTask, obsidianCompleted, todoistTask);
@@ -1049,7 +1117,7 @@ var SyncEngine = class {
       priority: todoistTask.priority,
       dueDate: TodoistService.parseDueDate(todoistTask),
       isCompleted: todoistTask.isCompleted,
-      labels: ((_b = todoistTask.labels) != null ? _b : []).map((l) => l.toLowerCase()),
+      labels: (_b = todoistTask.labels) != null ? _b : [],
       projectName
     };
     const newLine = buildTaskLine(updatedTask, this.settings.syncTag);
@@ -1458,11 +1526,17 @@ function renderQueryBlock(source, el, plugin) {
         cls: "syncist-query-timestamp"
       });
     } catch (error) {
-      console.error("Syncist query block error:", error);
       listContainer.empty();
+      const message = error instanceof Error ? error.message : String(error);
+      const isFilterError = message.toLowerCase().startsWith("invalid filter");
+      if (isFilterError) {
+        console.warn("Syncist query block: invalid filter \u2014", message);
+      } else {
+        console.error("Syncist query block error:", error);
+      }
       listContainer.createDiv({
         cls: "syncist-query-error",
-        text: `Failed to load tasks: ${error}`
+        text: isFilterError ? `${message}. Check the Todoist filter syntax.` : `Failed to load tasks: ${message}`
       });
     }
   };
@@ -1546,6 +1620,10 @@ var TodoistSyncPlugin = class extends import_obsidian6.Plugin {
       callback: async () => {
         if (!this.settings.apiToken) {
           new import_obsidian6.Notice("Please configure your API token in the settings.");
+          return;
+        }
+        if (this.syncEngine.isCurrentlySyncing()) {
+          new import_obsidian6.Notice("Sync already in progress, please wait.");
           return;
         }
         new import_obsidian6.Notice("Starting sync...");

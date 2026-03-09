@@ -120,6 +120,9 @@ export class SyncEngine {
       // Track newly created tasks so children can reference their Todoist IDs.
       // Maps "filePath:lineNumber" to the created Todoist task ID.
       const createdTaskMap = new Map<string, string>();
+      // Also track the IDs themselves so the stale-entry cleanup below does not
+      // remove entries that were just added in this sync cycle.
+      const newlyCreatedIds = new Set<string>();
 
       for (const task of sortedNewTasks) {
         try {
@@ -133,6 +136,7 @@ export class SyncEngine {
           console.debug(`Todoist Sync: Creating task "${task.content}" (parent: ${parentId ?? 'none'})...`);
           const todoistTask = await this.createTodoistTaskWithParent(task, parentId);
           createdTaskMap.set(`${task.filePath}:${task.lineNumber}`, todoistTask.id);
+          newlyCreatedIds.add(todoistTask.id);
           result.created++;
           console.debug('Todoist Sync: Task created successfully');
         } catch (error) {
@@ -169,10 +173,15 @@ export class SyncEngine {
         }
       }
 
-      // Clean up sync state for tasks no longer found in Obsidian
-      for (const [todoistId] of todoistTaskMap) {
-        const syncedTask = this.syncState.tasks[todoistId];
-        if (syncedTask && !syncedObsidianTasks.has(todoistId)) {
+      // Clean up sync state for any entry no longer present in Obsidian.
+      // This covers tasks whose file was renamed, moved, or deleted, as well
+      // as task lines that were manually removed. The Todoist task is left
+      // untouched; only the local tracking entry is removed.
+      // Entries created during THIS sync cycle are excluded — they were added
+      // after the vault scan and therefore won't be in syncedObsidianTasks yet.
+      for (const todoistId of Object.keys(this.syncState.tasks)) {
+        if (!syncedObsidianTasks.has(todoistId) && !newlyCreatedIds.has(todoistId)) {
+          console.debug(`Todoist Sync: Removing stale sync state entry for ${todoistId}`);
           delete this.syncState.tasks[todoistId];
         }
       }
@@ -318,7 +327,7 @@ export class SyncEngine {
       }
     }
 
-    // Check for content changes
+    // Check for content changes between Obsidian and Todoist
     const todoistContent = todoistTask.content;
     const todoistPriority = todoistTask.priority as TodoistPriority;
     const todoistDueDate = TodoistService.parseDueDate(todoistTask);
@@ -327,18 +336,70 @@ export class SyncEngine {
     const priorityDiffers = obsidianTask.priority !== todoistPriority;
     const dueDateDiffers = obsidianTask.dueDate !== todoistDueDate;
 
-    // Also check if labels differ
-    const todoistLabels = (todoistTask.labels ?? []).map(l => l.toLowerCase()).sort();
+    const todoistLabels = [...(todoistTask.labels ?? [])].sort();
     const obsidianLabels = [...obsidianTask.labels].sort();
     const labelsDiffer = JSON.stringify(todoistLabels) !== JSON.stringify(obsidianLabels);
 
-    const hasChanges = contentDiffers || priorityDiffers || dueDateDiffers || labelsDiffer;
+    const todoistProjectName = this.todoistService.getProjectName(todoistTask.projectId) ?? null;
+    const projectDiffers = todoistProjectName !== (obsidianTask.projectName ?? null);
+
+    const hasChanges = contentDiffers || priorityDiffers || dueDateDiffers || labelsDiffer || projectDiffers;
 
     if (!hasChanges) {
       this.updateSyncStateTask(todoistTask.id, obsidianTask, obsidianCompleted, todoistTask);
       return 'unchanged';
     }
 
+    // Determine which side changed since the last sync using the stored content
+    // hash. After a successful sync Obsidian and Todoist are identical, so the
+    // stored hash represents the last-known state of both sides.
+    const storedHash = this.syncState.tasks[todoistTask.id]?.contentHash ?? '';
+    const currentObsidianHash = generateContentHash(obsidianTask);
+
+    // Build a comparable hash from the current Todoist state.
+    // generateContentHash sorts labels internally, so order doesn't matter.
+    const todoistAsObsidian: ParsedObsidianTask = {
+      ...obsidianTask,
+      content: todoistContent,
+      priority: todoistPriority,
+      dueDate: todoistDueDate,
+      labels: todoistTask.labels ?? [],
+      isCompleted: todoistTask.isCompleted,
+      parentId: todoistTask.parentId ?? null,
+      projectId: todoistTask.projectId,
+    };
+    const currentTodoistHash = generateContentHash(todoistAsObsidian);
+
+    const obsidianChanged = currentObsidianHash !== storedHash;
+    const todoistChanged = currentTodoistHash !== storedHash;
+
+    // Project moved in Todoist (content hash unchanged on both sides) → pull to Obsidian
+    if (projectDiffers && !obsidianChanged && !todoistChanged) {
+      await this.updateObsidianTaskFromTodoist(obsidianTask, todoistTask);
+      this.updateSyncStateTask(todoistTask.id, obsidianTask, obsidianCompleted, todoistTask);
+      return 'updated';
+    }
+
+    // Only Obsidian changed → push to Todoist regardless of conflict policy
+    if (obsidianChanged && !todoistChanged) {
+      await this.todoistService.updateTask(todoistTask.id, {
+        content: obsidianTask.content,
+        priority: obsidianTask.priority,
+        dueString: obsidianTask.dueDate ?? undefined,
+        labels: obsidianTask.labels,
+      });
+      this.updateSyncStateTask(todoistTask.id, obsidianTask, obsidianCompleted, todoistTask);
+      return 'updated';
+    }
+
+    // Only Todoist changed → pull to Obsidian regardless of conflict policy
+    if (todoistChanged && !obsidianChanged) {
+      await this.updateObsidianTaskFromTodoist(obsidianTask, todoistTask);
+      this.updateSyncStateTask(todoistTask.id, obsidianTask, obsidianCompleted, todoistTask);
+      return 'updated';
+    }
+
+    // Both sides changed (or hash unavailable) → apply conflict resolution policy
     if (this.settings.conflictResolution === 'obsidian-wins') {
       await this.todoistService.updateTask(todoistTask.id, {
         content: obsidianTask.content,
@@ -403,7 +464,7 @@ export class SyncEngine {
       priority: todoistTask.priority as TodoistPriority,
       dueDate: TodoistService.parseDueDate(todoistTask),
       isCompleted: todoistTask.isCompleted,
-      labels: (todoistTask.labels ?? []).map(l => l.toLowerCase()),
+      labels: todoistTask.labels ?? [],
       projectName,
     };
 

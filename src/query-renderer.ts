@@ -160,11 +160,19 @@ export function renderQueryBlock(
         cls: 'syncist-query-timestamp',
       });
     } catch (error) {
-      console.error('Syncist query block error:', error);
       listContainer.empty();
+      const message = error instanceof Error ? error.message : String(error);
+      const isFilterError = message.toLowerCase().startsWith('invalid filter');
+      if (isFilterError) {
+        console.warn('Syncist query block: invalid filter —', message);
+      } else {
+        console.error('Syncist query block error:', error);
+      }
       listContainer.createDiv({
         cls: 'syncist-query-error',
-        text: `Failed to load tasks: ${error}`,
+        text: isFilterError
+          ? `${message}. Check the Todoist filter syntax.`
+          : `Failed to load tasks: ${message}`,
       });
     }
   };
