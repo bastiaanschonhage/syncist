@@ -48,6 +48,20 @@ export class SyncEngine {
     this.syncState = syncState;
   }
 
+  /**
+   * Resolve the display project name for a Todoist task.
+   * Returns null when the task is in the configured default project (or inbox
+   * when no default is set) so that 📁 is not written to the task line.
+   */
+  private resolveProjectName(projectId: string): string | null {
+    if (this.settings.defaultProjectId) {
+      if (projectId === this.settings.defaultProjectId) return null;
+    } else {
+      if (this.todoistService.isInboxProject(projectId)) return null;
+    }
+    return this.todoistService.getProjectName(projectId) ?? null;
+  }
+
   getSyncState(): SyncState {
     return this.syncState;
   }
@@ -456,7 +470,7 @@ export class SyncEngine {
     obsidianTask: ParsedObsidianTask,
     todoistTask: TodoistTask
   ): Promise<void> {
-    const projectName = this.todoistService.getProjectName(todoistTask.projectId) ?? null;
+    const projectName = this.resolveProjectName(todoistTask.projectId);
 
     const updatedTask: ParsedObsidianTask = {
       ...obsidianTask,
@@ -536,7 +550,7 @@ export class SyncEngine {
     filePath: string,
     lineNumber: number
   ): Promise<number> {
-    const projectName = this.todoistService.getProjectName(task.projectId) ?? null;
+    const projectName = this.resolveProjectName(task.projectId);
 
     const parentParsed: ParsedObsidianTask = {
       originalLine: '',

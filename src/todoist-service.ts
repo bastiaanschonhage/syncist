@@ -20,6 +20,7 @@ export class TodoistService {
   private apiToken: string | null = null;
   private projectCache: Map<string, string> = new Map();
   private reverseProjectCache: Map<string, string> = new Map();
+  private inboxProjectId: string | null = null;
 
   initialize(apiToken: string): void {
     if (!apiToken) {
@@ -71,10 +72,12 @@ export class TodoistService {
 
       this.projectCache.clear();
       this.reverseProjectCache.clear();
+      this.inboxProjectId = null;
 
       return allProjects.map(p => {
         this.projectCache.set(p.id, p.name);
         this.reverseProjectCache.set(p.name.toLowerCase(), p.id);
+        if (p.inbox_project) this.inboxProjectId = p.id;
         return { id: p.id, name: p.name, isInbox: p.inbox_project ?? false };
       });
     } catch (error) {
@@ -97,6 +100,10 @@ export class TodoistService {
 
   getProjectIdByName(name: string): string | undefined {
     return this.reverseProjectCache.get(name.toLowerCase());
+  }
+
+  isInboxProject(projectId: string): boolean {
+    return this.inboxProjectId === projectId;
   }
 
   async ensureProjectCache(): Promise<void> {

@@ -228,6 +228,7 @@ var TodoistService = class {
     this.apiToken = null;
     this.projectCache = /* @__PURE__ */ new Map();
     this.reverseProjectCache = /* @__PURE__ */ new Map();
+    this.inboxProjectId = null;
   }
   initialize(apiToken) {
     if (!apiToken) {
@@ -274,10 +275,13 @@ var TodoistService = class {
       } while (cursor);
       this.projectCache.clear();
       this.reverseProjectCache.clear();
+      this.inboxProjectId = null;
       return allProjects.map((p) => {
         var _a2;
         this.projectCache.set(p.id, p.name);
         this.reverseProjectCache.set(p.name.toLowerCase(), p.id);
+        if (p.inbox_project)
+          this.inboxProjectId = p.id;
         return { id: p.id, name: p.name, isInbox: (_a2 = p.inbox_project) != null ? _a2 : false };
       });
     } catch (error) {
@@ -297,6 +301,9 @@ var TodoistService = class {
   }
   getProjectIdByName(name) {
     return this.reverseProjectCache.get(name.toLowerCase());
+  }
+  isInboxProject(projectId) {
+    return this.inboxProjectId === projectId;
   }
   async ensureProjectCache() {
     if (this.projectCache.size === 0) {
@@ -787,6 +794,22 @@ var SyncEngine = class {
   updateSyncState(syncState) {
     this.syncState = syncState;
   }
+  /**
+   * Resolve the display project name for a Todoist task.
+   * Returns null when the task is in the configured default project (or inbox
+   * when no default is set) so that 📁 is not written to the task line.
+   */
+  resolveProjectName(projectId) {
+    var _a;
+    if (this.settings.defaultProjectId) {
+      if (projectId === this.settings.defaultProjectId)
+        return null;
+    } else {
+      if (this.todoistService.isInboxProject(projectId))
+        return null;
+    }
+    return (_a = this.todoistService.getProjectName(projectId)) != null ? _a : null;
+  }
   getSyncState() {
     return this.syncState;
   }
@@ -1109,15 +1132,15 @@ var SyncEngine = class {
    * Update Obsidian task from Todoist data
    */
   async updateObsidianTaskFromTodoist(obsidianTask, todoistTask) {
-    var _a, _b;
-    const projectName = (_a = this.todoistService.getProjectName(todoistTask.projectId)) != null ? _a : null;
+    var _a;
+    const projectName = this.resolveProjectName(todoistTask.projectId);
     const updatedTask = {
       ...obsidianTask,
       content: todoistTask.content,
       priority: todoistTask.priority,
       dueDate: TodoistService.parseDueDate(todoistTask),
       isCompleted: todoistTask.isCompleted,
-      labels: (_b = todoistTask.labels) != null ? _b : [],
+      labels: (_a = todoistTask.labels) != null ? _a : [],
       projectName
     };
     const newLine = buildTaskLine(updatedTask, this.settings.syncTag);
@@ -1166,8 +1189,8 @@ var SyncEngine = class {
    * Returns the number of lines inserted.
    */
   async importTaskAtCursor(task, subtasks, filePath, lineNumber) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i;
-    const projectName = (_a = this.todoistService.getProjectName(task.projectId)) != null ? _a : null;
+    var _a, _b, _c, _d, _e, _f, _g, _h;
+    const projectName = this.resolveProjectName(task.projectId);
     const parentParsed = {
       originalLine: "",
       lineNumber,
@@ -1175,12 +1198,12 @@ var SyncEngine = class {
       content: task.content,
       isCompleted: task.isCompleted,
       todoistId: task.id,
-      parentId: (_b = task.parentId) != null ? _b : null,
+      parentId: (_a = task.parentId) != null ? _a : null,
       indentLevel: 0,
       dueDate: TodoistService.parseDueDate(task),
       priority: task.priority,
-      labels: (_c = task.labels) != null ? _c : [],
-      description: (_d = task.description) != null ? _d : "",
+      labels: (_b = task.labels) != null ? _b : [],
+      description: (_c = task.description) != null ? _c : "",
       projectId: task.projectId,
       projectName,
       lastModified: Date.now()
@@ -1188,7 +1211,7 @@ var SyncEngine = class {
     const lines = [buildTaskLine(parentParsed, this.settings.syncTag)];
     this.syncState.tasks[task.id] = {
       todoistId: task.id,
-      parentId: (_e = task.parentId) != null ? _e : null,
+      parentId: (_d = task.parentId) != null ? _d : null,
       filePath,
       lineNumber,
       contentHash: generateContentHash(parentParsed),
@@ -1206,12 +1229,12 @@ var SyncEngine = class {
         content: sub.content,
         isCompleted: sub.isCompleted,
         todoistId: sub.id,
-        parentId: (_f = sub.parentId) != null ? _f : task.id,
+        parentId: (_e = sub.parentId) != null ? _e : task.id,
         indentLevel: 1,
         dueDate: TodoistService.parseDueDate(sub),
         priority: sub.priority,
-        labels: (_g = sub.labels) != null ? _g : [],
-        description: (_h = sub.description) != null ? _h : "",
+        labels: (_f = sub.labels) != null ? _f : [],
+        description: (_g = sub.description) != null ? _g : "",
         projectId: sub.projectId,
         projectName: null,
         lastModified: Date.now()
@@ -1219,7 +1242,7 @@ var SyncEngine = class {
       lines.push(buildTaskLine(subParsed, this.settings.syncTag));
       this.syncState.tasks[sub.id] = {
         todoistId: sub.id,
-        parentId: (_i = sub.parentId) != null ? _i : task.id,
+        parentId: (_h = sub.parentId) != null ? _h : task.id,
         filePath,
         lineNumber: lineNumber + 1 + i,
         contentHash: generateContentHash(subParsed),
