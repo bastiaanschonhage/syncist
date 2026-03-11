@@ -10,7 +10,7 @@ npm run build      # Production build (minified, no source maps)
 npm run lint       # ESLint on src/
 ```
 
-No automated test framework — testing is done manually using `test/TEST_SPEC_v2.0.0.md` against the TestVault.
+No automated test framework — testing is done manually using the spec in `test/` against the TestVault.
 
 ## Architecture
 
@@ -49,6 +49,15 @@ Tasks are identified by the sync tag (default `#todoist`) and carry metadata as 
 - Labels: `#label-name` (hashtags, excluding sync tag)
 - Project: `📁 ProjectName`
 - Subtask hierarchy: indentation level
+
+### Releasing
+
+1. Bump version in `manifest.json` and `package.json` (`npm pkg set version=X.Y.Z`)
+2. `npm run build`
+3. Commit `manifest.json`, `package.json`, `main.js` (`package-lock.json` is gitignored)
+4. `gh release create vX.Y.Z main.js manifest.json styles.css --title "vX.Y.Z" --notes "..."`
+
+BRAT installs from GitHub releases, not commits — the release step is required.
 
 ### Key Constraints
 
