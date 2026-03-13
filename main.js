@@ -528,13 +528,14 @@ var PATTERNS = {
   scheduledDate: /⏳\s*(\d{4}-\d{2}-\d{2})/,
   startDate: /🛫\s*(\d{4}-\d{2}-\d{2})/,
   doneDate: /✅\s*(\d{4}-\d{2}-\d{2})/,
+  urgentPriority: /🔺/,
   highPriority: /⏫/,
   mediumPriority: /🔼/,
   lowPriority: /🔽/,
   // Alternative text-based due date: due:YYYY-MM-DD
   textDueDate: /due:(\d{4}-\d{2}-\d{2})/i,
   // Project metadata: 📁 ProjectName
-  project: new RegExp("\u{1F4C1}\\s*([^\\s#\u{1F4C5}\u23EB\u{1F53C}\u{1F53D}<]+)", "u")
+  project: new RegExp("\u{1F4C1}\\s*([^\\s#\u{1F4C5}\u{1F53A}\u23EB\u{1F53C}\u{1F53D}<]+)", "u")
 };
 function getIndentLevel(line) {
   var _a, _b;
@@ -610,14 +611,17 @@ function extractDueDate(content) {
   return null;
 }
 function extractPriority(content) {
-  if (PATTERNS.highPriority.test(content)) {
+  if (PATTERNS.urgentPriority.test(content)) {
     return 4 /* HIGH */;
   }
-  if (PATTERNS.mediumPriority.test(content)) {
+  if (PATTERNS.highPriority.test(content)) {
     return 3 /* MEDIUM */;
   }
-  if (PATTERNS.lowPriority.test(content)) {
+  if (PATTERNS.mediumPriority.test(content)) {
     return 2 /* LOW */;
+  }
+  if (PATTERNS.lowPriority.test(content)) {
+    return 1 /* NONE */;
   }
   return 1 /* NONE */;
 }
@@ -643,6 +647,7 @@ function cleanTaskContent(content, syncTag) {
   cleaned = cleaned.replace(PATTERNS.scheduledDate, "");
   cleaned = cleaned.replace(PATTERNS.startDate, "");
   cleaned = cleaned.replace(PATTERNS.doneDate, "");
+  cleaned = cleaned.replace(PATTERNS.urgentPriority, "");
   cleaned = cleaned.replace(PATTERNS.highPriority, "");
   cleaned = cleaned.replace(PATTERNS.mediumPriority, "");
   cleaned = cleaned.replace(PATTERNS.lowPriority, "");
@@ -669,11 +674,11 @@ function buildTaskLine(task, syncTag) {
     line += ` \u{1F4C1} ${task.projectName}`;
   }
   if (task.priority === 4 /* HIGH */) {
-    line += " \u23EB";
+    line += " \u{1F53A}";
   } else if (task.priority === 3 /* MEDIUM */) {
-    line += " \u{1F53C}";
+    line += " \u23EB";
   } else if (task.priority === 2 /* LOW */) {
-    line += " \u{1F53D}";
+    line += " \u{1F53C}";
   }
   if (task.dueDate) {
     line += ` \u{1F4C5} ${task.dueDate}`;
@@ -1298,7 +1303,7 @@ var SyncEngine = class {
       content = cleanedContent + " " + this.settings.syncTag;
       prefix = (_b = (_a = lineContent.match(/^(\s*)/)) == null ? void 0 : _a[1]) != null ? _b : "";
     }
-    const cleanContent = content.replace(new RegExp(this.settings.syncTag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "").replace(/#[a-zA-Z0-9_-]+/g, "").replace(/📅\s*\d{4}-\d{2}-\d{2}/g, "").replace(/⏫|🔼|🔽/g, "").replace(/📁\s*\S+/g, "").replace(/\s+/g, " ").trim();
+    const cleanContent = content.replace(new RegExp(this.settings.syncTag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "").replace(/#[a-zA-Z0-9_-]+/g, "").replace(/📅\s*\d{4}-\d{2}-\d{2}/g, "").replace(/🔺|⏫|🔼|🔽/g, "").replace(/📁\s*\S+/g, "").replace(/\s+/g, " ").trim();
     try {
       const todoistTask = await this.todoistService.createTask(cleanContent, {
         projectId: this.settings.defaultProjectId || void 0
@@ -1394,7 +1399,7 @@ var ImportTaskModal = class extends import_obsidian4.SuggestModal {
   renderSuggestion(task, el) {
     var _a;
     const container = el.createDiv({ cls: "syncist-import-suggestion" });
-    const priorityMap = { 4: "\u23EB", 3: "\u{1F53C}", 2: "\u{1F53D}" };
+    const priorityMap = { 4: "\u{1F53A}", 3: "\u23EB", 2: "\u{1F53C}" };
     const priorityEmoji = (_a = priorityMap[task.priority]) != null ? _a : "";
     const titleEl = container.createDiv({ cls: "syncist-import-title" });
     if (priorityEmoji) {
@@ -1464,9 +1469,9 @@ function buildTaskTree(tasks) {
   return roots;
 }
 var PRIORITY_EMOJI = {
-  [4 /* HIGH */]: "\u23EB",
-  [3 /* MEDIUM */]: "\u{1F53C}",
-  [2 /* LOW */]: "\u{1F53D}"
+  [4 /* HIGH */]: "\u{1F53A}",
+  [3 /* MEDIUM */]: "\u23EB",
+  [2 /* LOW */]: "\u{1F53C}"
 };
 function renderTaskRow(task, container, plugin, indent) {
   const row = container.createDiv({ cls: `syncist-query-task${indent ? " syncist-query-subtask" : ""}` });
