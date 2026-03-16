@@ -73,10 +73,12 @@ The commit message format is `Bump to vX.Y.Z: <description>` — keep the descri
 ## Step 6: Create GitHub release
 
 ```bash
-gh release create vX.Y.Z main.js manifest.json styles.css \
-  --title "vX.Y.Z" \
+gh release create X.Y.Z main.js manifest.json styles.css \
+  --title "X.Y.Z" \
   --notes "<release notes>"
 ```
+
+**Important:** Obsidian requires tags and release titles **without** a `v` prefix (e.g. `2.0.3`, not `v2.0.3`). BRAT uses this tag to identify the latest version.
 
 For the release notes, write a brief human-readable summary of what changed. For a patch: one sentence on what was fixed. For a minor: bullet list of new features. For a major: summary of breaking changes and migration notes if any.
 
