@@ -31,8 +31,9 @@ export const DEFAULT_SETTINGS: TodoistSyncSettings = {
 };
 
 /**
- * Priority levels matching Todoist (1=low, 4=urgent)
- * Note: Todoist uses 1-4 where 4 is highest, but API expects p1=4, p2=3, p3=2, p4=1
+ * Priority levels matching Todoist API values (1=normal, 4=urgent).
+ * Maps to Obsidian Tasks plugin emojis:
+ *   HIGH (4/urgent) → 🔺  MEDIUM (3/high) → ⏫  LOW (2/medium) → 🔼  NONE (1/normal) → (no emoji)
  */
 export enum TodoistPriority {
   NONE = 1,

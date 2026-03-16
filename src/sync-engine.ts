@@ -690,7 +690,7 @@ export class SyncEngine {
       .replace(new RegExp(this.settings.syncTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '')
       .replace(/#[a-zA-Z0-9_-]+/g, '')
       .replace(/📅\s*\d{4}-\d{2}-\d{2}/g, '')
-      .replace(/⏫|🔼|🔽/g, '')
+      .replace(/🔺|⏫|🔼|🔽/g, '')
       .replace(/📁\s*\S+/g, '')
       .replace(/\s+/g, ' ')
       .trim();

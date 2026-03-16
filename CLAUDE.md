@@ -52,6 +52,9 @@ Tasks are identified by the sync tag (default `#todoist`) and carry metadata as 
 
 ### Releasing
 
+Use `/release` to run the full release workflow automatically.
+
+Manual steps (for reference):
 1. Bump version in `manifest.json` and `package.json` (`npm pkg set version=X.Y.Z`)
 2. `npm run build`
 3. Commit `manifest.json`, `package.json`, `main.js` (`package-lock.json` is gitignored)

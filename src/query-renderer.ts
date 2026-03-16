@@ -51,9 +51,9 @@ function buildTaskTree(tasks: TodoistTask[]): { task: TodoistTask; children: Tod
 }
 
 const PRIORITY_EMOJI: Record<number, string> = {
-  [TodoistPriority.HIGH]: '⏫',
-  [TodoistPriority.MEDIUM]: '🔼',
-  [TodoistPriority.LOW]: '🔽',
+  [TodoistPriority.HIGH]: '🔺',
+  [TodoistPriority.MEDIUM]: '⏫',
+  [TodoistPriority.LOW]: '🔼',
 };
 
 function renderTaskRow(

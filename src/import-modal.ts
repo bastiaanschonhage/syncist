@@ -68,7 +68,7 @@ export class ImportTaskModal extends SuggestModal<TodoistTask> {
   renderSuggestion(task: TodoistTask, el: HTMLElement): void {
     const container = el.createDiv({ cls: 'syncist-import-suggestion' });
 
-    const priorityMap: Record<number, string> = { 4: '⏫', 3: '🔼', 2: '🔽' };
+    const priorityMap: Record<number, string> = { 4: '🔺', 3: '⏫', 2: '🔼' };
     const priorityEmoji = priorityMap[task.priority] ?? '';
 
     const titleEl = container.createDiv({ cls: 'syncist-import-title' });

@@ -15,13 +15,14 @@ const PATTERNS = {
   scheduledDate: /⏳\s*(\d{4}-\d{2}-\d{2})/,
   startDate: /🛫\s*(\d{4}-\d{2}-\d{2})/,
   doneDate: /✅\s*(\d{4}-\d{2}-\d{2})/,
+  urgentPriority: /🔺/,
   highPriority: /⏫/,
   mediumPriority: /🔼/,
   lowPriority: /🔽/,
   // Alternative text-based due date: due:YYYY-MM-DD
   textDueDate: /due:(\d{4}-\d{2}-\d{2})/i,
   // Project metadata: 📁 ProjectName
-  project: new RegExp('📁\\s*([^\\s#📅⏫🔼🔽<]+)', 'u'),
+  project: new RegExp('📁\\s*([^\\s#📅🔺⏫🔼🔽<]+)', 'u'),
 };
 
 /**
@@ -132,14 +133,17 @@ function extractDueDate(content: string): string | null {
  * Extract priority from task content (Tasks plugin emoji format)
  */
 function extractPriority(content: string): TodoistPriority {
-  if (PATTERNS.highPriority.test(content)) {
+  if (PATTERNS.urgentPriority.test(content)) {
     return TodoistPriority.HIGH;
   }
-  if (PATTERNS.mediumPriority.test(content)) {
+  if (PATTERNS.highPriority.test(content)) {
     return TodoistPriority.MEDIUM;
   }
-  if (PATTERNS.lowPriority.test(content)) {
+  if (PATTERNS.mediumPriority.test(content)) {
     return TodoistPriority.LOW;
+  }
+  if (PATTERNS.lowPriority.test(content)) {
+    return TodoistPriority.NONE;
   }
   return TodoistPriority.NONE;
 }
@@ -180,6 +184,7 @@ function cleanTaskContent(content: string, syncTag: string): string {
   cleaned = cleaned.replace(PATTERNS.scheduledDate, '');
   cleaned = cleaned.replace(PATTERNS.startDate, '');
   cleaned = cleaned.replace(PATTERNS.doneDate, '');
+  cleaned = cleaned.replace(PATTERNS.urgentPriority, '');
   cleaned = cleaned.replace(PATTERNS.highPriority, '');
   cleaned = cleaned.replace(PATTERNS.mediumPriority, '');
   cleaned = cleaned.replace(PATTERNS.lowPriority, '');
@@ -229,11 +234,11 @@ export function buildTaskLine(task: ParsedObsidianTask, syncTag: string): string
   }
 
   if (task.priority === TodoistPriority.HIGH) {
-    line += ' ⏫';
+    line += ' 🔺';
   } else if (task.priority === TodoistPriority.MEDIUM) {
-    line += ' 🔼';
+    line += ' ⏫';
   } else if (task.priority === TodoistPriority.LOW) {
-    line += ' 🔽';
+    line += ' 🔼';
   }
 
   if (task.dueDate) {
@@ -404,11 +409,11 @@ export function generateContentHash(task: ParsedObsidianTask): string {
 export function priorityToEmoji(priority: TodoistPriority): string {
   switch (priority) {
     case TodoistPriority.HIGH:
-      return '⏫';
+      return '🔺';
     case TodoistPriority.MEDIUM:
-      return '🔼';
+      return '⏫';
     case TodoistPriority.LOW:
-      return '🔽';
+      return '🔼';
     default:
       return '';
   }
