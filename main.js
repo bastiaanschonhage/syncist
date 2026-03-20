@@ -952,9 +952,13 @@ var SyncEngine = class {
   async getAllObsidianTasks() {
     const tasks = [];
     const files = this.app.vault.getMarkdownFiles();
-    for (const file of files) {
+    for (let i = 0; i < files.length; i++) {
+      if (i > 0 && i % 50 === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      const file = files[i];
       try {
-        const content = await this.app.vault.read(file);
+        const content = await this.app.vault.cachedRead(file);
         const fileTasks = parseTasksFromContent(
           content,
           file.path,
