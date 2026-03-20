@@ -138,7 +138,9 @@ export class SyncEngine {
       // remove entries that were just added in this sync cycle.
       const newlyCreatedIds = new Set<string>();
 
-      for (const task of sortedNewTasks) {
+      for (let i = 0; i < sortedNewTasks.length; i++) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+        const task = sortedNewTasks[i];
         try {
           // Resolve parentId: use the task's existing parentId, or look up from
           // a task that was just created in this same sync cycle.
@@ -147,12 +149,11 @@ export class SyncEngine {
             parentId = this.findParentTodoistId(task, obsidianTasks, createdTaskMap);
           }
 
-          console.debug(`Todoist Sync: Creating task "${task.content}" (parent: ${parentId ?? 'none'})...`);
+          console.debug(`Todoist Sync: Creating task ${i + 1}/${sortedNewTasks.length}: "${task.content}" (parent: ${parentId ?? 'none'})`);
           const todoistTask = await this.createTodoistTaskWithParent(task, parentId);
           createdTaskMap.set(`${task.filePath}:${task.lineNumber}`, todoistTask.id);
           newlyCreatedIds.add(todoistTask.id);
           result.created++;
-          console.debug('Todoist Sync: Task created successfully');
         } catch (error) {
           result.errors.push(`Failed to create task: ${task.content} - ${error}`);
           console.error('Todoist Sync: Failed to create task:', error);
@@ -160,7 +161,10 @@ export class SyncEngine {
       }
 
       // Sync existing tasks
-      for (const [todoistId, obsidianTask] of syncedObsidianTasks) {
+      const syncEntries = [...syncedObsidianTasks.entries()];
+      for (let i = 0; i < syncEntries.length; i++) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+        const [todoistId, obsidianTask] = syncEntries[i];
         const todoistTask = todoistTaskMap.get(todoistId);
 
         if (!todoistTask) {
@@ -184,6 +188,10 @@ export class SyncEngine {
         } catch (error) {
           result.errors.push(`Failed to sync task: ${obsidianTask.content} - ${error}`);
           console.error('Todoist Sync: Failed to sync existing task:', error);
+        }
+
+        if ((i + 1) % 25 === 0 || i === syncEntries.length - 1) {
+          console.debug(`Todoist Sync: Synced ${i + 1}/${syncEntries.length} existing tasks`);
         }
       }
 
@@ -241,10 +249,15 @@ export class SyncEngine {
   private async getAllObsidianTasks(): Promise<ParsedObsidianTask[]> {
     const tasks: ParsedObsidianTask[] = [];
     const files = this.app.vault.getMarkdownFiles();
+    console.debug(`Todoist Sync: Vault has ${files.length} markdown files`);
 
-    for (const file of files) {
+    for (let i = 0; i < files.length; i++) {
+      // Yield every file to keep UI responsive
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      const file = files[i];
       try {
-        const content = await this.app.vault.read(file);
+        const content = await this.app.vault.cachedRead(file);
         const fileTasks = parseTasksFromContent(
           content,
           file.path,
@@ -257,6 +270,7 @@ export class SyncEngine {
       }
     }
 
+    console.debug(`Todoist Sync: Scan complete — ${files.length} files, ${tasks.length} tasks found`);
     return tasks;
   }
 

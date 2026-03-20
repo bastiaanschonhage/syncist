@@ -38,7 +38,7 @@ function getIndentLevel(line: string): number {
     if (leading[i] === '\t') {
       level++;
       i++;
-    } else {
+    } else if (leading[i] === ' ') {
       // Count a run of spaces, 2 per level
       let spaces = 0;
       while (i < leading.length && leading[i] === ' ') {
@@ -46,6 +46,9 @@ function getIndentLevel(line: string): number {
         i++;
       }
       level += Math.floor(spaces / 2);
+    } else {
+      // Skip non-breaking spaces and other unicode whitespace
+      i++;
     }
   }
   return level;
