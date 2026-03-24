@@ -139,7 +139,7 @@ export class SyncEngine {
       const newlyCreatedIds = new Set<string>();
 
       for (let i = 0; i < sortedNewTasks.length; i++) {
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise(resolve => window.setTimeout(resolve, 0));
         const task = sortedNewTasks[i];
         try {
           // Resolve parentId: use the task's existing parentId, or look up from
@@ -163,7 +163,7 @@ export class SyncEngine {
       // Sync existing tasks
       const syncEntries = [...syncedObsidianTasks.entries()];
       for (let i = 0; i < syncEntries.length; i++) {
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise(resolve => window.setTimeout(resolve, 0));
         const [todoistId, obsidianTask] = syncEntries[i];
         const todoistTask = todoistTaskMap.get(todoistId);
 
@@ -253,7 +253,7 @@ export class SyncEngine {
 
     for (let i = 0; i < files.length; i++) {
       // Yield every file to keep UI responsive
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await new Promise(resolve => window.setTimeout(resolve, 0));
 
       const file = files[i];
       try {

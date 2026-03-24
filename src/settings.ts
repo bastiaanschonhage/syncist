@@ -24,7 +24,7 @@ export class TodoistSyncSettingTab extends PluginSettingTab {
     // API Token Setting
     new Setting(containerEl)
       .setName('Todoist API token')
-      .setDesc('Your Todoist API token. Find it in Todoist settings → Integrations → Developer.')
+      .setDesc('Your todoist API token. Find it in todoist settings → integrations → developer.')
       .addText((text) => {
         text
           .setPlaceholder('Enter your API token')
@@ -95,7 +95,7 @@ export class TodoistSyncSettingTab extends PluginSettingTab {
     // Default Project Setting
     const projectSetting = new Setting(containerEl)
       .setName('Default project')
-      .setDesc('Default Todoist project for new tasks. Leave empty to use inbox.');
+      .setDesc('Default todoist project for new tasks. Leave empty to use inbox.');
 
     if (this.projects.length > 0) {
       projectSetting.addDropdown((dropdown) => {
@@ -124,7 +124,7 @@ export class TodoistSyncSettingTab extends PluginSettingTab {
     // Sync Interval Setting
     new Setting(containerEl)
       .setName('Sync interval')
-      .setDesc('How often to sync with Todoist (in minutes). Set to 0 to disable auto sync.')
+      .setDesc('How often to sync with todoist (in minutes). Set to 0 to disable auto sync.')
       .addText((text) =>
         text
           .setPlaceholder('5')

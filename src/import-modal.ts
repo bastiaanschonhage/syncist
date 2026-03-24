@@ -20,7 +20,7 @@ export class ImportTaskModal extends SuggestModal<TodoistTask> {
     super(app);
     this.todoistService = todoistService;
     this.onSelect = onSelect;
-    this.setPlaceholder('Search for a Todoist task...');
+    this.setPlaceholder('Search for a todoist task...');
     this.setInstructions([
       { command: '↑↓', purpose: 'navigate' },
       { command: '↵', purpose: 'import task (with subtasks)' },
@@ -37,7 +37,7 @@ export class ImportTaskModal extends SuggestModal<TodoistTask> {
       this.inputEl.dispatchEvent(new Event('input'));
     } catch (error) {
       console.error('Failed to load tasks for import:', error);
-      new Notice('Failed to load Todoist tasks. Check your API token.');
+      new Notice('Failed to load todoist tasks. Check your API token.');
       this.close();
     }
   }

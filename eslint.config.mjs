@@ -15,8 +15,6 @@ export default defineConfig([
       },
     },
     rules: {
-      // Allow Todoist as a brand name in UI text
-      "obsidianmd/ui/sentence-case": ["warn", { brands: ["Todoist", "Inbox"] }],
       // Disable unsafe any rules for loadData/saveData which return any
       "@typescript-eslint/no-unsafe-assignment": "off",
       "@typescript-eslint/no-unsafe-member-access": "off",

@@ -145,7 +145,7 @@ export default class TodoistSyncPlugin extends Plugin {
     // Command: Import task from Todoist
     this.addCommand({
       id: 'import-todoist-task',
-      name: 'Import task from Todoist',
+      name: 'Import task from todoist',
       editorCallback: (editor: Editor, view: MarkdownView) => {
         if (!this.settings.apiToken) {
           new Notice('Please configure your API token in the settings.');

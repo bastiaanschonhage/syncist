@@ -42,7 +42,7 @@ var TodoistSyncSettingTab = class extends import_obsidian.PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     new import_obsidian.Setting(containerEl).setName("Syncist").setHeading();
-    new import_obsidian.Setting(containerEl).setName("Todoist API token").setDesc("Your Todoist API token. Find it in Todoist settings \u2192 Integrations \u2192 Developer.").addText((text) => {
+    new import_obsidian.Setting(containerEl).setName("Todoist API token").setDesc("Your todoist API token. Find it in todoist settings \u2192 integrations \u2192 developer.").addText((text) => {
       text.setPlaceholder("Enter your API token").setValue(this.plugin.settings.apiToken).onChange(async (value) => {
         this.plugin.settings.apiToken = value;
         await this.plugin.saveSettings();
@@ -86,7 +86,7 @@ var TodoistSyncSettingTab = class extends import_obsidian.PluginSettingTab {
     if (this.plugin.settings.apiToken && !this.projectsLoaded) {
       void this.loadProjects().then(() => this.display());
     }
-    const projectSetting = new import_obsidian.Setting(containerEl).setName("Default project").setDesc("Default Todoist project for new tasks. Leave empty to use inbox.");
+    const projectSetting = new import_obsidian.Setting(containerEl).setName("Default project").setDesc("Default todoist project for new tasks. Leave empty to use inbox.");
     if (this.projects.length > 0) {
       projectSetting.addDropdown((dropdown) => {
         dropdown.addOption("", "Inbox (default)");
@@ -104,7 +104,7 @@ var TodoistSyncSettingTab = class extends import_obsidian.PluginSettingTab {
         text.setPlaceholder("Verify API token to load projects").setValue(this.plugin.settings.defaultProjectId).setDisabled(true);
       });
     }
-    new import_obsidian.Setting(containerEl).setName("Sync interval").setDesc("How often to sync with Todoist (in minutes). Set to 0 to disable auto sync.").addText(
+    new import_obsidian.Setting(containerEl).setName("Sync interval").setDesc("How often to sync with todoist (in minutes). Set to 0 to disable auto sync.").addText(
       (text) => text.setPlaceholder("5").setValue(String(this.plugin.settings.syncIntervalMinutes)).onChange(async (value) => {
         const num = parseInt(value, 10);
         if (!isNaN(num) && num >= 0) {
@@ -872,7 +872,7 @@ var SyncEngine = class {
       const createdTaskMap = /* @__PURE__ */ new Map();
       const newlyCreatedIds = /* @__PURE__ */ new Set();
       for (let i = 0; i < sortedNewTasks.length; i++) {
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
         const task = sortedNewTasks[i];
         try {
           let parentId = task.parentId;
@@ -891,7 +891,7 @@ var SyncEngine = class {
       }
       const syncEntries = [...syncedObsidianTasks.entries()];
       for (let i = 0; i < syncEntries.length; i++) {
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
         const [todoistId, obsidianTask] = syncEntries[i];
         const todoistTask = todoistTaskMap.get(todoistId);
         if (!todoistTask) {
@@ -963,7 +963,7 @@ var SyncEngine = class {
     const files = this.app.vault.getMarkdownFiles();
     console.debug(`Todoist Sync: Vault has ${files.length} markdown files`);
     for (let i = 0; i < files.length; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
       const file = files[i];
       try {
         const content = await this.app.vault.cachedRead(file);
@@ -1372,7 +1372,7 @@ var ImportTaskModal = class extends import_obsidian4.SuggestModal {
     this.loading = true;
     this.todoistService = todoistService;
     this.onSelect = onSelect;
-    this.setPlaceholder("Search for a Todoist task...");
+    this.setPlaceholder("Search for a todoist task...");
     this.setInstructions([
       { command: "\u2191\u2193", purpose: "navigate" },
       { command: "\u21B5", purpose: "import task (with subtasks)" },
@@ -1388,7 +1388,7 @@ var ImportTaskModal = class extends import_obsidian4.SuggestModal {
       this.inputEl.dispatchEvent(new Event("input"));
     } catch (error) {
       console.error("Failed to load tasks for import:", error);
-      new import_obsidian4.Notice("Failed to load Todoist tasks. Check your API token.");
+      new import_obsidian4.Notice("Failed to load todoist tasks. Check your API token.");
       this.close();
     }
   }
@@ -1678,7 +1678,7 @@ var TodoistSyncPlugin = class extends import_obsidian6.Plugin {
     });
     this.addCommand({
       id: "import-todoist-task",
-      name: "Import task from Todoist",
+      name: "Import task from todoist",
       editorCallback: (editor, view) => {
         var _a;
         if (!this.settings.apiToken) {
