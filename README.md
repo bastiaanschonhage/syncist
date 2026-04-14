@@ -1,6 +1,6 @@
 # Syncist (Todoist Sync) - Obsidian Plugin
 
-> **Code 100% written by AI; plug-in 100% validated and tested by human.**
+> **Created with the help of AI; fully validated and tested by human.**
 
 ### Summary
 With this plugin it is possible to create `Todoist` tasks from `Obsidian` and keep them in sync bidirectionally.
@@ -18,7 +18,7 @@ When you add the `#todoist` tag to a task (or checkbox item) it will automatical
 - **Commands**: Quick commands to create tasks, import tasks, and trigger sync
 - **Conflict Resolution**: Choose how to handle conflicts (Obsidian wins, Todoist wins, or ask)
 - **Zero Dependencies**: Direct Todoist API v1 integration via Obsidian's built-in `requestUrl` — no external SDKs
-- **AI-Crafted**: Code 100% written by AI; plug-in 100% validated and tested by human
+- **AI-Crafted**: Created with the help of AI; fully validated and tested by human
 
 ### Installation
 
@@ -156,7 +156,7 @@ npm run lint
 
 ### About This Plugin
 
-**Code 100% written by AI; plug-in 100% validated and tested by human.**
+**Created with the help of AI; fully validated and tested by human.**
 
 - Built entirely using `Claude` in Cursor IDE
 - API integration guided by `Context7` MCP for up-to-date Todoist and Obsidian documentation

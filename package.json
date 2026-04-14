@@ -1,7 +1,7 @@
 {
   "name": "syncist-todoist-sync",
-  "version": "2.0.6",
-  "description": "Bidirectional sync between Obsidian tasks and Todoist. Subtasks, import, projects, labels, and query blocks. Code 100% written by AI; plug-in 100% validated and tested by human.",
+  "version": "2.1.0",
+  "description": "Bidirectional sync between Obsidian tasks and Todoist. Subtasks, import, projects, labels, and query blocks. Created with the help of AI; fully validated and tested by human.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
