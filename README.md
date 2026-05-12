@@ -119,6 +119,38 @@ The block renders as a styled task list with checkboxes, priorities, projects, a
 | `filter: @label` | Tasks with a label |
 | `filter: p1` | High priority tasks |
 
+To include completed tasks, keep `filter:` as Todoist filter syntax and add Syncist-specific options:
+
+````markdown
+```syncist
+filter: today
+include_completed: true
+completed_by: due_date
+```
+````
+
+Completed task search uses Todoist's completed-task archive endpoints, which require a bounded date window. If no window is configured, Syncist uses the last 6 weeks for `completed_by: due_date` and the last 30 days for `completed_by: completion_date`. Label and project filters default to `completion_date`; date-oriented filters default to `due_date`.
+
+| Option | Description |
+|--------|-------------|
+| `include_completed: true` | Merge active results with matching completed tasks |
+| `completed_by: due_date` | Find completed tasks by their Todoist due date |
+| `completed_by: completion_date` | Find completed tasks by when they were completed |
+| `completed_since: 30d` | Start of the completed-task window (`30d`, `6w`, `3m`, `today`, `yesterday`, or `YYYY-MM-DD`) |
+| `completed_until: today` | End of the completed-task window (`today`, `now`, or `YYYY-MM-DD`) |
+| `completed_range: today` | Shortcut for one bounded range (`today`, `yesterday`, `YYYY-MM-DD`, `30d`, `6w`, `3m`) |
+
+Example for recently completed label work:
+
+````markdown
+```syncist
+filter: @writing
+include_completed: true
+completed_by: completion_date
+completed_since: 30d
+```
+````
+
 Each query block includes a refresh button and shows when it was last updated.
 
 #### Commands

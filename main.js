@@ -201,7 +201,7 @@ var DEFAULT_SETTINGS = {
   conflictResolution: "todoist-wins"
 };
 function normalizeTask(raw) {
-  var _a;
+  var _a, _b, _c, _d;
   return {
     id: raw.id,
     content: raw.content,
@@ -211,8 +211,9 @@ function normalizeTask(raw) {
     priority: raw.priority,
     due: raw.due,
     labels: (_a = raw.labels) != null ? _a : [],
-    isCompleted: raw.checked,
-    createdAt: raw.added_at,
+    isCompleted: (_b = raw.checked) != null ? _b : raw.completed_at != null,
+    createdAt: (_c = raw.added_at) != null ? _c : "",
+    completedAt: (_d = raw.completed_at) != null ? _d : null,
     url: `https://todoist.com/app/task/${raw.id}`
   };
 }
@@ -496,6 +497,47 @@ var TodoistService = class {
         allTasks.push(normalizeTask(raw));
       }
       cursor = (_d = data.next_cursor) != null ? _d : null;
+    } while (cursor);
+    return allTasks;
+  }
+  async getCompletedTasks(options) {
+    var _a, _b, _c, _d, _e;
+    if (!this.apiToken)
+      throw new Error("Todoist API not initialized");
+    const endpoint = options.by === "due_date" ? "tasks/completed/by_due_date" : "tasks/completed/by_completion_date";
+    const allTasks = [];
+    let cursor = null;
+    do {
+      const params = new URLSearchParams({
+        filter_query: options.filterQuery,
+        since: options.since.toISOString(),
+        until: options.until.toISOString(),
+        limit: "200"
+      });
+      if (cursor)
+        params.set("cursor", cursor);
+      const resp = await (0, import_obsidian2.requestUrl)({
+        url: `${API_BASE}/${endpoint}?${params.toString()}`,
+        headers: this.headers(),
+        throw: false
+      });
+      if (resp.status === 400) {
+        const body = resp.json;
+        const detail = (_a = body == null ? void 0 : body.error) != null ? _a : "invalid completed task query";
+        throw new Error(`Invalid completed task query: ${detail}`);
+      }
+      if (resp.status === 403) {
+        throw new Error("Completed task archive unavailable for this Todoist account");
+      }
+      if (resp.status !== 200) {
+        throw new Error(`Completed task request failed, status ${resp.status}`);
+      }
+      const data = resp.json;
+      const rawItems = (_c = (_b = data.items) != null ? _b : data.results) != null ? _c : [];
+      for (const raw of rawItems) {
+        allTasks.push(normalizeTask({ ...raw, checked: (_d = raw.checked) != null ? _d : true }));
+      }
+      cursor = (_e = data.next_cursor) != null ? _e : null;
     } while (cursor);
     return allTasks;
   }
@@ -1053,7 +1095,7 @@ var SyncEngine = class {
       }
     }
     const todoistContent = todoistTask.content;
-    const todoistPriority = todoistTask.priority;
+    const todoistPriority = TodoistService.fromTodoistPriority(todoistTask.priority);
     const todoistDueDate = TodoistService.parseDueDate(todoistTask);
     const contentDiffers = obsidianTask.content !== todoistContent;
     const priorityDiffers = obsidianTask.priority !== todoistPriority;
@@ -1155,7 +1197,7 @@ var SyncEngine = class {
     const updatedTask = {
       ...obsidianTask,
       content: todoistTask.content,
-      priority: todoistTask.priority,
+      priority: TodoistService.fromTodoistPriority(todoistTask.priority),
       dueDate: TodoistService.parseDueDate(todoistTask),
       isCompleted: todoistTask.isCompleted,
       labels: (_a = todoistTask.labels) != null ? _a : [],
@@ -1219,7 +1261,7 @@ var SyncEngine = class {
       parentId: (_a = task.parentId) != null ? _a : null,
       indentLevel: 0,
       dueDate: TodoistService.parseDueDate(task),
-      priority: task.priority,
+      priority: TodoistService.fromTodoistPriority(task.priority),
       labels: (_b = task.labels) != null ? _b : [],
       description: (_c = task.description) != null ? _c : "",
       projectId: task.projectId,
@@ -1250,7 +1292,7 @@ var SyncEngine = class {
         parentId: (_e = sub.parentId) != null ? _e : task.id,
         indentLevel: 1,
         dueDate: TodoistService.parseDueDate(sub),
-        priority: sub.priority,
+        priority: TodoistService.fromTodoistPriority(sub.priority),
         labels: (_f = sub.labels) != null ? _f : [],
         description: (_g = sub.description) != null ? _g : "",
         projectId: sub.projectId,
@@ -1443,18 +1485,57 @@ var ImportTaskModal = class extends import_obsidian4.SuggestModal {
 
 // src/query-renderer.ts
 var import_obsidian5 = require("obsidian");
+var DAY_MS = 24 * 60 * 60 * 1e3;
+var MAX_COMPLETED_WINDOW_DAYS = {
+  due_date: 42,
+  completion_date: 93
+};
 function parseQueryConfig(source) {
   const lines = source.trim().split("\n");
   let filter = "";
+  let includeCompleted = false;
+  let completedBy = null;
+  let completedSince = null;
+  let completedUntil = null;
+  let completedRange = null;
   for (const line of lines) {
-    const match = line.match(/^\s*filter\s*:\s*(.+)$/i);
-    if (match) {
-      filter = match[1].trim();
+    const match = line.match(/^\s*([a-z_]+)\s*:\s*(.+)$/i);
+    if (!match) {
+      continue;
+    }
+    const key = match[1].toLowerCase();
+    const value = match[2].trim();
+    if (key === "filter") {
+      filter = value;
+    } else if (key === "include_completed") {
+      includeCompleted = ["true", "yes", "1", "on"].includes(value.toLowerCase());
+    } else if (key === "completed_by") {
+      if (value !== "due_date" && value !== "completion_date") {
+        return { config: null, error: "Invalid completed_by. Use due_date or completion_date." };
+      }
+      completedBy = value;
+    } else if (key === "completed_since") {
+      completedSince = value;
+    } else if (key === "completed_until") {
+      completedUntil = value;
+    } else if (key === "completed_range") {
+      completedRange = value;
     }
   }
-  if (!filter)
-    return null;
-  return { filter };
+  if (!filter) {
+    return { config: null, error: "Invalid syncist block. Use: filter: today" };
+  }
+  return {
+    config: {
+      filter,
+      includeCompleted,
+      completedBy,
+      completedSince,
+      completedUntil,
+      completedRange
+    },
+    error: null
+  };
 }
 function buildTaskTree(tasks) {
   var _a, _b;
@@ -1486,6 +1567,115 @@ var PRIORITY_EMOJI = {
   [3 /* MEDIUM */]: "\u23EB",
   [2 /* LOW */]: "\u{1F53C}"
 };
+function mergeTasks(activeTasks, completedTasks) {
+  const tasksById = /* @__PURE__ */ new Map();
+  for (const task of [...activeTasks, ...completedTasks]) {
+    tasksById.set(task.id, task);
+  }
+  return Array.from(tasksById.values());
+}
+function inferCompletedBy(filter) {
+  const lower = filter.toLowerCase();
+  const hasDateIntent = /\b(today|tomorrow|overdue|date|due|before|after|next|this week|last week)\b/.test(lower);
+  const hasProjectOrLabelIntent = /(^|\s)[@#][^\s)]+/.test(filter);
+  return hasProjectOrLabelIntent && !hasDateIntent ? "completion_date" : "due_date";
+}
+function startOfDay(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+function addDays(date, days) {
+  return new Date(date.getTime() + days * DAY_MS);
+}
+function parseDurationDays(value) {
+  const match = value.trim().toLowerCase().match(/^(\d+)\s*([dwm])$/);
+  if (!match)
+    return null;
+  const amount = Number(match[1]);
+  const unit = match[2];
+  if (unit === "d")
+    return amount;
+  if (unit === "w")
+    return amount * 7;
+  return amount * 30;
+}
+function parseDateBoundary(value, now, boundary) {
+  const lower = value.trim().toLowerCase();
+  let date = null;
+  if (lower === "now") {
+    return new Date(now);
+  }
+  if (lower === "today") {
+    date = startOfDay(now);
+  } else if (lower === "yesterday") {
+    date = addDays(startOfDay(now), -1);
+  } else if (lower === "tomorrow") {
+    date = addDays(startOfDay(now), 1);
+  } else {
+    const match = lower.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (match) {
+      date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    }
+  }
+  if (!date)
+    return null;
+  return boundary === "start" ? date : addDays(date, 1);
+}
+function resolveCompletedRange(value, now) {
+  const lower = value.trim().toLowerCase();
+  const durationDays = parseDurationDays(lower);
+  const until = addDays(startOfDay(now), 1);
+  if (durationDays !== null) {
+    return { since: addDays(until, -durationDays), until };
+  }
+  const since = parseDateBoundary(lower, now, "start");
+  const rangeUntil = parseDateBoundary(lower, now, "end");
+  if (!since || !rangeUntil)
+    return null;
+  return { since, until: rangeUntil };
+}
+function resolveCompletedWindow(config, now) {
+  var _a, _b, _c;
+  const by = (_a = config.completedBy) != null ? _a : inferCompletedBy(config.filter);
+  const defaultDays = by === "due_date" ? 42 : 30;
+  let since;
+  let until;
+  if (config.completedRange) {
+    const range = resolveCompletedRange(config.completedRange, now);
+    if (!range) {
+      throw new Error("Invalid completed_range. Use today, yesterday, YYYY-MM-DD, or a duration like 30d/6w.");
+    }
+    since = range.since;
+    until = range.until;
+  } else {
+    until = config.completedUntil ? (_b = parseDateBoundary(config.completedUntil, now, "end")) != null ? _b : (() => {
+      throw new Error("Invalid completed_until. Use today, now, or YYYY-MM-DD.");
+    })() : addDays(startOfDay(now), 1);
+    if (config.completedSince) {
+      const durationDays = parseDurationDays(config.completedSince);
+      since = durationDays !== null ? addDays(until, -durationDays) : (_c = parseDateBoundary(config.completedSince, now, "start")) != null ? _c : (() => {
+        throw new Error("Invalid completed_since. Use YYYY-MM-DD, today, yesterday, or a duration like 30d/6w.");
+      })();
+    } else {
+      since = addDays(until, -defaultDays);
+    }
+  }
+  if (since >= until) {
+    throw new Error("Completed task range must start before it ends.");
+  }
+  const maxDays = MAX_COMPLETED_WINDOW_DAYS[by];
+  const rangeDays = Math.ceil((until.getTime() - since.getTime()) / DAY_MS);
+  if (rangeDays > maxDays) {
+    const maxLabel = by === "due_date" ? "6w" : "3m";
+    throw new Error(`Completed ${by} queries can cover at most ${maxLabel}.`);
+  }
+  return { by, since, until };
+}
+function formatDateForLabel(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 function renderTaskRow(task, container, plugin, indent) {
   const row = container.createDiv({ cls: `syncist-query-task${indent ? " syncist-query-subtask" : ""}` });
   const checkbox = row.createEl("input", { type: "checkbox", cls: "syncist-query-checkbox" });
@@ -1527,9 +1717,9 @@ function renderTaskRow(task, container, plugin, indent) {
   }
 }
 function renderQueryBlock(source, el, plugin) {
-  const config = parseQueryConfig(source);
+  const { config, error } = parseQueryConfig(source);
   if (!config) {
-    el.createDiv({ cls: "syncist-query-error", text: "Invalid syncist block. Use: filter: today" });
+    el.createDiv({ cls: "syncist-query-error", text: error != null ? error : "Invalid syncist block. Use: filter: today" });
     return;
   }
   if (!plugin.todoistService.isInitialized()) {
@@ -1538,7 +1728,10 @@ function renderQueryBlock(source, el, plugin) {
   }
   const wrapper = el.createDiv({ cls: "syncist-query-block" });
   const header = wrapper.createDiv({ cls: "syncist-query-header" });
-  header.createSpan({ text: `Filter: ${config.filter}`, cls: "syncist-query-filter-label" });
+  header.createSpan({
+    text: config.includeCompleted ? `Filter: ${config.filter} \xB7 including completed` : `Filter: ${config.filter}`,
+    cls: "syncist-query-filter-label"
+  });
   const refreshBtn = header.createEl("button", { text: "\u21BB", cls: "syncist-query-refresh" });
   refreshBtn.setAttribute("aria-label", "Refresh");
   const listContainer = wrapper.createDiv({ cls: "syncist-query-list" });
@@ -1549,7 +1742,25 @@ function renderQueryBlock(source, el, plugin) {
     listContainer.createDiv({ cls: "syncist-query-loading", text: "Loading tasks..." });
     try {
       await plugin.todoistService.ensureProjectCache();
-      const tasks = await plugin.todoistService.getFilteredTasks(config.filter);
+      const activeTasks = await plugin.todoistService.getFilteredTasks(config.filter);
+      let completedTasks = [];
+      let completedWarning = null;
+      let completedWindow = null;
+      if (config.includeCompleted) {
+        try {
+          completedWindow = resolveCompletedWindow(config, /* @__PURE__ */ new Date());
+          completedTasks = await plugin.todoistService.getCompletedTasks({
+            filterQuery: config.filter,
+            by: completedWindow.by,
+            since: completedWindow.since,
+            until: completedWindow.until
+          });
+        } catch (completedError) {
+          completedWarning = completedError instanceof Error ? completedError.message : String(completedError);
+          console.warn("Syncist query block completed task lookup failed:", completedError);
+        }
+      }
+      const tasks = mergeTasks(activeTasks, completedTasks);
       listContainer.empty();
       if (tasks.length === 0) {
         listContainer.createDiv({ cls: "syncist-query-empty", text: "No tasks match this filter." });
@@ -1566,14 +1777,26 @@ function renderQueryBlock(source, el, plugin) {
         text: `Updated: ${(/* @__PURE__ */ new Date()).toLocaleTimeString()}`,
         cls: "syncist-query-timestamp"
       });
-    } catch (error) {
+      if (completedWindow) {
+        footerEl.createDiv({
+          text: `Completed: ${completedWindow.by.replace("_", " ")} ${formatDateForLabel(completedWindow.since)} to ${formatDateForLabel(completedWindow.until)}`,
+          cls: "syncist-query-completed-window"
+        });
+      }
+      if (completedWarning) {
+        footerEl.createDiv({
+          text: `Completed tasks not loaded: ${completedWarning}`,
+          cls: "syncist-query-warning"
+        });
+      }
+    } catch (error2) {
       listContainer.empty();
-      const message = error instanceof Error ? error.message : String(error);
+      const message = error2 instanceof Error ? error2.message : String(error2);
       const isFilterError = message.toLowerCase().startsWith("invalid filter");
       if (isFilterError) {
         console.warn("Syncist query block: invalid filter \u2014", message);
       } else {
-        console.error("Syncist query block error:", error);
+        console.error("Syncist query block error:", error2);
       }
       listContainer.createDiv({
         cls: "syncist-query-error",

@@ -12,6 +12,14 @@ import {
 } from './types';
 
 const API_BASE = 'https://api.todoist.com/api/v1';
+export type TodoistCompletedTaskDateMode = 'due_date' | 'completion_date';
+
+export interface CompletedTaskQueryOptions {
+  filterQuery: string;
+  by: TodoistCompletedTaskDateMode;
+  since: Date;
+  until: Date;
+}
 
 /**
  * Service class wrapping the Todoist API v1 via Obsidian's requestUrl.
@@ -314,8 +322,61 @@ export class TodoistService {
     return allTasks;
   }
 
+  async getCompletedTasks(options: CompletedTaskQueryOptions): Promise<TodoistTask[]> {
+    if (!this.apiToken) throw new Error('Todoist API not initialized');
+
+    const endpoint = options.by === 'due_date'
+      ? 'tasks/completed/by_due_date'
+      : 'tasks/completed/by_completion_date';
+    const allTasks: TodoistTask[] = [];
+    let cursor: string | null = null;
+
+    do {
+      const params = new URLSearchParams({
+        filter_query: options.filterQuery,
+        since: options.since.toISOString(),
+        until: options.until.toISOString(),
+        limit: '200',
+      });
+      if (cursor) params.set('cursor', cursor);
+
+      const resp = await requestUrl({
+        url: `${API_BASE}/${endpoint}?${params.toString()}`,
+        headers: this.headers(),
+        throw: false,
+      });
+
+      if (resp.status === 400) {
+        const body = resp.json as { error?: string } | null;
+        const detail = body?.error ?? 'invalid completed task query';
+        throw new Error(`Invalid completed task query: ${detail}`);
+      }
+
+      if (resp.status === 403) {
+        throw new Error('Completed task archive unavailable for this Todoist account');
+      }
+
+      if (resp.status !== 200) {
+        throw new Error(`Completed task request failed, status ${resp.status}`);
+      }
+
+      const data = resp.json as {
+        items?: TodoistApiRawTask[];
+        results?: TodoistApiRawTask[];
+        next_cursor?: string | null;
+      };
+      const rawItems = data.items ?? data.results ?? [];
+      for (const raw of rawItems) {
+        allTasks.push(normalizeTask({ ...raw, checked: raw.checked ?? true }));
+      }
+      cursor = data.next_cursor ?? null;
+    } while (cursor);
+
+    return allTasks;
+  }
+
   static fromTodoistPriority(priority: number): TodoistPriority {
-    return priority as TodoistPriority;
+    return priority;
   }
 
   static formatDueDate(date: Date): string {

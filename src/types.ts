@@ -59,6 +59,7 @@ export interface TodoistTask {
   labels: string[];
   isCompleted: boolean;
   createdAt: string;
+  completedAt: string | null;
   url: string;
 }
 
@@ -72,8 +73,9 @@ export interface TodoistApiRawTask {
   priority: number;
   due: { date: string; string?: string; is_recurring?: boolean } | null;
   labels: string[];
-  checked: boolean;
-  added_at: string;
+  checked?: boolean;
+  added_at?: string;
+  completed_at?: string | null;
 }
 
 /** Convert a raw API task to our normalized shape */
@@ -87,8 +89,9 @@ export function normalizeTask(raw: TodoistApiRawTask): TodoistTask {
     priority: raw.priority,
     due: raw.due,
     labels: raw.labels ?? [],
-    isCompleted: raw.checked,
-    createdAt: raw.added_at,
+    isCompleted: raw.checked ?? raw.completed_at != null,
+    createdAt: raw.added_at ?? '',
+    completedAt: raw.completed_at ?? null,
     url: `https://todoist.com/app/task/${raw.id}`,
   };
 }

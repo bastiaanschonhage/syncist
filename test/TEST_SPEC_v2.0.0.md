@@ -330,6 +330,43 @@ Test each of these query blocks (create one block per filter):
 2. **Expected**: Subtasks appear indented below their parent in the rendered block
 - [ ] **PASS** / **FAIL**
 
+### E9. Query block with completed due-date tasks
+
+1. Create a task due today in Todoist
+2. Complete the task in Todoist
+3. Add or refresh:
+   ````
+   ```syncist
+   filter: today
+   include_completed: true
+   completed_by: due_date
+   completed_range: today
+   ```
+   ````
+4. **Expected**:
+   - The completed task appears in the rendered list
+   - Its checkbox is checked
+   - The footer shows the completed-task date window
+5. Uncheck the task in the rendered list
+6. **Expected**: The task is reopened in Todoist
+- [ ] **PASS** / **FAIL**
+
+### E10. Query block with recently completed label tasks
+
+1. Create a Todoist task with an existing label, such as `@labelname`
+2. Complete the task
+3. Add or refresh:
+   ````
+   ```syncist
+   filter: @labelname
+   include_completed: true
+   completed_by: completion_date
+   completed_since: 30d
+   ```
+   ````
+4. **Expected**: Recently completed tasks with that label are merged with any active matching tasks, without duplicate rows.
+- [ ] **PASS** / **FAIL**
+
 ---
 
 ## Part F: Edge Cases & Error Handling
@@ -386,7 +423,7 @@ Test each of these query blocks (create one block per filter):
 | B. Subtasks | 6 | | |
 | C. Import | 6 | | |
 | D. Projects & Labels | 6 | | |
-| E. Query Blocks | 8 | | |
+| E. Query Blocks | 10 | | |
 | F. Edge Cases | 6 | | |
 | **Total** | **41** | | |
 

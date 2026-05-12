@@ -13,7 +13,6 @@ import {
   SyncResult,
   SyncConflict,
   TodoistSyncSettings,
-  TodoistPriority,
   TodoistTask,
 } from './types';
 
@@ -357,7 +356,7 @@ export class SyncEngine {
 
     // Check for content changes between Obsidian and Todoist
     const todoistContent = todoistTask.content;
-    const todoistPriority = todoistTask.priority as TodoistPriority;
+    const todoistPriority = TodoistService.fromTodoistPriority(todoistTask.priority);
     const todoistDueDate = TodoistService.parseDueDate(todoistTask);
 
     const contentDiffers = obsidianTask.content !== todoistContent;
@@ -489,7 +488,7 @@ export class SyncEngine {
     const updatedTask: ParsedObsidianTask = {
       ...obsidianTask,
       content: todoistTask.content,
-      priority: todoistTask.priority as TodoistPriority,
+      priority: TodoistService.fromTodoistPriority(todoistTask.priority),
       dueDate: TodoistService.parseDueDate(todoistTask),
       isCompleted: todoistTask.isCompleted,
       labels: todoistTask.labels ?? [],
@@ -576,7 +575,7 @@ export class SyncEngine {
       parentId: task.parentId ?? null,
       indentLevel: 0,
       dueDate: TodoistService.parseDueDate(task),
-      priority: task.priority as TodoistPriority,
+      priority: TodoistService.fromTodoistPriority(task.priority),
       labels: task.labels ?? [],
       description: task.description ?? '',
       projectId: task.projectId,
@@ -612,7 +611,7 @@ export class SyncEngine {
         parentId: sub.parentId ?? task.id,
         indentLevel: 1,
         dueDate: TodoistService.parseDueDate(sub),
-        priority: sub.priority as TodoistPriority,
+        priority: TodoistService.fromTodoistPriority(sub.priority),
         labels: sub.labels ?? [],
         description: sub.description ?? '',
         projectId: sub.projectId,
