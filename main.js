@@ -451,21 +451,6 @@ var TodoistService = class {
       throw error;
     }
   }
-  async addComment(taskId, content) {
-    if (!this.apiToken)
-      throw new Error("Todoist API not initialized");
-    try {
-      await (0, import_obsidian2.requestUrl)({
-        url: `${API_BASE}/comments`,
-        method: "POST",
-        headers: { ...this.headers(), "Content-Type": "application/json" },
-        body: JSON.stringify({ task_id: taskId, content })
-      });
-    } catch (error) {
-      console.error("Failed to add comment to task:", error);
-      throw error;
-    }
-  }
   async deleteTask(taskId) {
     if (!this.apiToken)
       throw new Error("Todoist API not initialized");
@@ -832,6 +817,23 @@ var SyncEngine = class {
     }
     return (_a = this.todoistService.getProjectName(projectId)) != null ? _a : null;
   }
+  /**
+   * Build a Todoist task description with a clickable source link back to the
+   * Obsidian note. The link uses the obsidian:// URI scheme so clicking in
+   * Todoist opens the note directly in the Obsidian app.
+   */
+  buildDescriptionWithSource(filePath, existingDescription) {
+    const noteRef = filePath.replace(/\.md$/i, "");
+    const vault = encodeURIComponent(this.app.vault.getName());
+    const file = encodeURIComponent(noteRef);
+    const sourceLine = `Source: [${noteRef}](obsidian://open?vault=${vault}&file=${file})`;
+    if (existingDescription && existingDescription.trim().length > 0) {
+      return `${sourceLine}
+
+${existingDescription}`;
+    }
+    return sourceLine;
+  }
   getSyncState() {
     return this.syncState;
   }
@@ -1007,6 +1009,7 @@ var SyncEngine = class {
       if (resolvedId)
         projectId = resolvedId;
     }
+    const description = this.buildDescriptionWithSource(task.filePath, task.description);
     const todoistTask = await this.todoistService.createTask(task.content, {
       projectId: parentId ? void 0 : projectId,
       // Subtasks inherit project from parent
@@ -1014,15 +1017,9 @@ var SyncEngine = class {
       priority: task.priority,
       dueDate: (_a = task.dueDate) != null ? _a : void 0,
       labels: task.labels,
-      description: task.description
+      description
     });
     await this.updateObsidianTaskLine(task, (line) => addTodoistIdToLine(line, todoistTask.id));
-    const noteRef = task.filePath.replace(/\.md$/i, "");
-    try {
-      await this.todoistService.addComment(todoistTask.id, `Source: [[${noteRef}]]`);
-    } catch (error) {
-      console.warn("Todoist Sync: Failed to add source comment, continuing:", error);
-    }
     this.syncState.tasks[todoistTask.id] = {
       todoistId: todoistTask.id,
       parentId,
@@ -1339,8 +1336,10 @@ var SyncEngine = class {
     }
     const cleanContent = content.replace(new RegExp(this.settings.syncTag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "").replace(/#[a-zA-Z0-9_-]+/g, "").replace(/📅\s*\d{4}-\d{2}-\d{2}/g, "").replace(/🔺|⏫|🔼|🔽/g, "").replace(/📁\s*\S+/g, "").replace(/\s+/g, " ").trim();
     try {
+      const description = this.buildDescriptionWithSource(filePath, "");
       const todoistTask = await this.todoistService.createTask(cleanContent, {
-        projectId: this.settings.defaultProjectId || void 0
+        projectId: this.settings.defaultProjectId || void 0,
+        description
       });
       const file = this.app.vault.getAbstractFileByPath(filePath);
       if (!(file instanceof import_obsidian3.TFile)) {
@@ -1370,12 +1369,6 @@ var SyncEngine = class {
         todoistCompleted: false,
         projectId: todoistTask.projectId
       };
-      const noteRef = filePath.replace(/\.md$/i, "");
-      try {
-        await this.todoistService.addComment(todoistTask.id, `Source: [[${noteRef}]]`);
-      } catch (error) {
-        console.warn("Failed to add source comment, continuing:", error);
-      }
       return { success: true, message: `Created Todoist task: ${cleanContent}` };
     } catch (error) {
       console.error("Failed to create Todoist task:", error);
