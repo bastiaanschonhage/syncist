@@ -451,6 +451,21 @@ var TodoistService = class {
       throw error;
     }
   }
+  async addComment(taskId, content) {
+    if (!this.apiToken)
+      throw new Error("Todoist API not initialized");
+    try {
+      await (0, import_obsidian2.requestUrl)({
+        url: `${API_BASE}/comments`,
+        method: "POST",
+        headers: { ...this.headers(), "Content-Type": "application/json" },
+        body: JSON.stringify({ task_id: taskId, content })
+      });
+    } catch (error) {
+      console.error("Failed to add comment to task:", error);
+      throw error;
+    }
+  }
   async deleteTask(taskId) {
     if (!this.apiToken)
       throw new Error("Todoist API not initialized");
@@ -1002,6 +1017,12 @@ var SyncEngine = class {
       description: task.description
     });
     await this.updateObsidianTaskLine(task, (line) => addTodoistIdToLine(line, todoistTask.id));
+    const noteRef = task.filePath.replace(/\.md$/i, "");
+    try {
+      await this.todoistService.addComment(todoistTask.id, `Source: [[${noteRef}]]`);
+    } catch (error) {
+      console.warn("Todoist Sync: Failed to add source comment, continuing:", error);
+    }
     this.syncState.tasks[todoistTask.id] = {
       todoistId: todoistTask.id,
       parentId,
@@ -1349,6 +1370,12 @@ var SyncEngine = class {
         todoistCompleted: false,
         projectId: todoistTask.projectId
       };
+      const noteRef = filePath.replace(/\.md$/i, "");
+      try {
+        await this.todoistService.addComment(todoistTask.id, `Source: [[${noteRef}]]`);
+      } catch (error) {
+        console.warn("Failed to add source comment, continuing:", error);
+      }
       return { success: true, message: `Created Todoist task: ${cleanContent}` };
     } catch (error) {
       console.error("Failed to create Todoist task:", error);
