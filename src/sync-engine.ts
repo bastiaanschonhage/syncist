@@ -4,8 +4,10 @@ import {
   parseTasksFromContent,
   buildTaskLine,
   addTodoistIdToLine,
+  formatTaskId,
   updateTaskCompletion,
   generateContentHash,
+  PATTERNS,
 } from './task-parser';
 import {
   ParsedObsidianTask,
@@ -294,7 +296,9 @@ export class SyncEngine {
       description: task.description,
     });
 
-    await this.updateObsidianTaskLine(task, (line) => addTodoistIdToLine(line, todoistTask.id));
+    await this.updateObsidianTaskLine(task, (line) =>
+      addTodoistIdToLine(line, todoistTask.id, this.settings.taskIdFormat)
+    );
 
     this.syncState.tasks[todoistTask.id] = {
       todoistId: todoistTask.id,
@@ -496,7 +500,7 @@ export class SyncEngine {
       projectName,
     };
 
-    const newLine = buildTaskLine(updatedTask, this.settings.syncTag);
+    const newLine = buildTaskLine(updatedTask, this.settings.syncTag, this.settings.taskIdFormat);
     await this.replaceLineInFile(obsidianTask.filePath, obsidianTask.lineNumber, newLine);
   }
 
@@ -584,7 +588,7 @@ export class SyncEngine {
       lastModified: Date.now(),
     };
 
-    const lines: string[] = [buildTaskLine(parentParsed, this.settings.syncTag)];
+    const lines: string[] = [buildTaskLine(parentParsed, this.settings.syncTag, this.settings.taskIdFormat)];
 
     // Add to sync state
     this.syncState.tasks[task.id] = {
@@ -620,7 +624,7 @@ export class SyncEngine {
         lastModified: Date.now(),
       };
 
-      lines.push(buildTaskLine(subParsed, this.settings.syncTag));
+      lines.push(buildTaskLine(subParsed, this.settings.syncTag, this.settings.taskIdFormat));
 
       this.syncState.tasks[sub.id] = {
         todoistId: sub.id,
@@ -672,7 +676,7 @@ export class SyncEngine {
       prefix = taskMatch[1];
       content = taskMatch[3];
       
-      const todoistIdMatch = content.match(/<!--\s*todoist-id:\s*([\w]+)\s*-->/);
+      const todoistIdMatch = content.match(PATTERNS.todoistId);
       if (todoistIdMatch) {
         return { success: false, message: 'Task is already synced with Todoist.' };
       }
@@ -724,12 +728,17 @@ export class SyncEngine {
 
       let newLine: string;
       if (isTask) {
-        newLine = addTodoistIdToLine(lineContent, todoistTask.id);
+        newLine = addTodoistIdToLine(lineContent, todoistTask.id, this.settings.taskIdFormat);
         if (!new RegExp(this.settings.syncTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(newLine)) {
-          newLine = newLine.replace(/(\s*)<!--/, ` ${this.settings.syncTag}$1<!--`);
+          if (this.settings.taskIdFormat === 'block-id') {
+            newLine = newLine.replace(/(\s*)\^todoist-/, ` ${this.settings.syncTag}$1^todoist-`);
+          } else {
+            newLine = newLine.replace(/(\s*)<!--/, ` ${this.settings.syncTag}$1<!--`);
+          }
         }
       } else {
-        newLine = `${prefix}- [ ] ${content} <!-- todoist-id:${todoistTask.id} -->`;
+        const idSuffix = formatTaskId(todoistTask.id, this.settings.taskIdFormat);
+        newLine = `${prefix}- [ ] ${content} ${idSuffix}`;
       }
 
       lines[lineNumber] = newLine;

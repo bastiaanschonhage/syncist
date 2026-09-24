@@ -1,6 +1,6 @@
 import { App, PluginSettingTab, Setting, Notice } from 'obsidian';
 import TodoistSyncPlugin from './main';
-import { ConflictResolution, TodoistProject } from './types';
+import { ConflictResolution, TaskIdFormat, TodoistProject } from './types';
 
 /**
  * Settings tab for Todoist Sync plugin
@@ -151,6 +151,21 @@ export class TodoistSyncSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.conflictResolution)
           .onChange(async (value) => {
             this.plugin.settings.conflictResolution = value as ConflictResolution;
+            await this.plugin.saveSettings();
+          });
+      });
+
+    // Task ID format setting
+    new Setting(containerEl)
+      .setName('Task ID format')
+      .setDesc('Format used to store task ids. Block ids are recommended for the tasks plugin.')
+      .addDropdown((dropdown) => {
+        dropdown
+          .addOption('comment', 'HTML comment')
+          .addOption('block-id', 'Block ID')
+          .setValue(this.plugin.settings.taskIdFormat)
+          .onChange(async (value) => {
+            this.plugin.settings.taskIdFormat = value as TaskIdFormat;
             await this.plugin.saveSettings();
           });
       });

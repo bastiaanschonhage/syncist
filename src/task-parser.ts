@@ -1,13 +1,13 @@
-import { ParsedObsidianTask, TodoistPriority } from './types';
+import { ParsedObsidianTask, TaskIdFormat, TodoistPriority } from './types';
 
 /**
  * Regex patterns for task parsing
  */
-const PATTERNS = {
+export const PATTERNS = {
   // Matches markdown task: - [ ] or - [x] or * [ ] etc.
   task: /^(\s*)[-*]\s+\[([ xX])\]\s+(.*)$/,
-  // Matches Todoist ID comment: <!-- todoist-id:abc123 --> (v1 IDs are alphanumeric)
-  todoistId: /<!--\s*todoist-id:\s*([\w]+)\s*-->/,
+  // Matches Todoist ID comment or Obsidian block ID: <!-- todoist-id:abc123 --> or ^todoist-abc123
+  todoistId: /(?:<!--\s*todoist-id:\s*([a-zA-Z0-9]+)\s*-->|\^todoist-([a-zA-Z0-9]+))/,
   // Matches hashtags: #tag (but not #project/ prefixed)
   hashtag: /#([a-zA-Z0-9_-]+)/g,
   // Tasks plugin emoji patterns
@@ -80,7 +80,7 @@ export function parseTaskLine(
   }
 
   const todoistIdMatch = taskContent.match(PATTERNS.todoistId);
-  const todoistId = todoistIdMatch ? todoistIdMatch[1] : null;
+  const todoistId = todoistIdMatch ? (todoistIdMatch[1] || todoistIdMatch[2]) : null;
 
   const dueDate = extractDueDate(taskContent);
   const priority = extractPriority(taskContent);
@@ -175,10 +175,11 @@ function extractLabels(content: string, syncTag: string): string[] {
 /**
  * Clean task content by removing metadata, keeping only the task description
  */
-function cleanTaskContent(content: string, syncTag: string): string {
+export function cleanTaskContent(content: string, syncTag: string): string {
   let cleaned = content;
 
   cleaned = cleaned.replace(/<!--\s*todoist-id:\s*[\w]+\s*-->/g, '');
+  cleaned = cleaned.replace(/\s*\^todoist-[\w]+/g, '');
 
   const syncTagPattern = new RegExp(escapeRegex(syncTag), 'gi');
   cleaned = cleaned.replace(syncTagPattern, '');
@@ -215,10 +216,21 @@ function escapeRegex(str: string): string {
 }
 
 /**
+ * Format a Todoist ID according to the chosen TaskIdFormat
+ */
+export function formatTaskId(id: string, format: TaskIdFormat = 'comment'): string {
+  return format === 'block-id' ? `^todoist-${id}` : `<!-- todoist-id:${id} -->`;
+}
+
+/**
  * Build an Obsidian task line from parsed task data.
  * Only adds the sync tag to top-level tasks (indentLevel === 0).
  */
-export function buildTaskLine(task: ParsedObsidianTask, syncTag: string): string {
+export function buildTaskLine(
+  task: ParsedObsidianTask,
+  syncTag: string,
+  idFormat: TaskIdFormat = 'comment'
+): string {
   const indent = '\t'.repeat(task.indentLevel);
   const checkbox = task.isCompleted ? '[x]' : '[ ]';
   let line = `${indent}- ${checkbox} ${task.content}`;
@@ -249,7 +261,7 @@ export function buildTaskLine(task: ParsedObsidianTask, syncTag: string): string
   }
 
   if (task.todoistId) {
-    line += ` <!-- todoist-id:${task.todoistId} -->`;
+    line += ` ${formatTaskId(task.todoistId, idFormat)}`;
   }
 
   return line;
@@ -258,12 +270,19 @@ export function buildTaskLine(task: ParsedObsidianTask, syncTag: string): string
 /**
  * Update an existing task line with new Todoist ID
  */
-export function addTodoistIdToLine(line: string, todoistId: string): string {
+export function addTodoistIdToLine(
+  line: string,
+  todoistId: string,
+  idFormat: TaskIdFormat = 'comment'
+): string {
   // Preserve leading whitespace (indentation) — only trim the trailing end
   const leadingWhitespace = line.match(/^(\s*)/)?.[1] ?? '';
-  const stripped = line.replace(/<!--\s*todoist-id:\s*[\w]+\s*-->/g, '').trimEnd();
+  const stripped = line
+    .replace(/<!--\s*todoist-id:\s*[\w]+\s*-->/g, '')
+    .replace(/\s*\^todoist-[\w]+/g, '')
+    .trimEnd();
   const withoutLeading = stripped.trimStart();
-  const updated = `${leadingWhitespace}${withoutLeading} <!-- todoist-id:${todoistId} -->`;
+  const updated = `${leadingWhitespace}${withoutLeading} ${formatTaskId(todoistId, idFormat)}`;
   return updated;
 }
 
