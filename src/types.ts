@@ -12,7 +12,16 @@ export interface TodoistSyncSettings {
   syncIntervalMinutes: number;
   /** Conflict resolution strategy */
   conflictResolution: ConflictResolution;
+  /** Task ID format used to link Obsidian tasks to Todoist */
+  taskIdFormat: TaskIdFormat;
 }
+
+/**
+ * Task ID format options:
+ * - 'comment': HTML comment <!-- todoist-id:ABC123 --> (legacy format)
+ * - 'block-id': Obsidian block ID ^todoist-ABC123 (recommended for Obsidian Tasks compatibility)
+ */
+export type TaskIdFormat = 'comment' | 'block-id';
 
 /**
  * Conflict resolution options
@@ -28,6 +37,7 @@ export const DEFAULT_SETTINGS: TodoistSyncSettings = {
   defaultProjectId: '',
   syncIntervalMinutes: 5,
   conflictResolution: 'todoist-wins',
+  taskIdFormat: 'comment',
 };
 
 /**

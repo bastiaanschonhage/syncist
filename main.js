@@ -120,6 +120,12 @@ var TodoistSyncSettingTab = class extends import_obsidian.PluginSettingTab {
         await this.plugin.saveSettings();
       });
     });
+    new import_obsidian.Setting(containerEl).setName("Task ID format").setDesc("Format used to store task ids. Block ids are recommended for the tasks plugin.").addDropdown((dropdown) => {
+      dropdown.addOption("comment", "HTML comment").addOption("block-id", "Block ID").setValue(this.plugin.settings.taskIdFormat).onChange(async (value) => {
+        this.plugin.settings.taskIdFormat = value;
+        await this.plugin.saveSettings();
+      });
+    });
     new import_obsidian.Setting(containerEl).setName("Manual actions").setHeading();
     new import_obsidian.Setting(containerEl).setName("Sync now").setDesc("Manually trigger a sync.").addButton((button) => {
       button.setButtonText("Sync now").setCta().onClick(async () => {
@@ -198,7 +204,8 @@ var DEFAULT_SETTINGS = {
   syncTag: "#todoist",
   defaultProjectId: "",
   syncIntervalMinutes: 5,
-  conflictResolution: "todoist-wins"
+  conflictResolution: "todoist-wins",
+  taskIdFormat: "comment"
 };
 function normalizeTask(raw) {
   var _a;
@@ -519,8 +526,8 @@ var import_obsidian3 = require("obsidian");
 var PATTERNS = {
   // Matches markdown task: - [ ] or - [x] or * [ ] etc.
   task: /^(\s*)[-*]\s+\[([ xX])\]\s+(.*)$/,
-  // Matches Todoist ID comment: <!-- todoist-id:abc123 --> (v1 IDs are alphanumeric)
-  todoistId: /<!--\s*todoist-id:\s*([\w]+)\s*-->/,
+  // Matches Todoist ID comment or Obsidian block ID: <!-- todoist-id:abc123 --> or ^todoist-abc123
+  todoistId: /(?:<!--\s*todoist-id:\s*([a-zA-Z0-9]+)\s*-->|\^todoist-([a-zA-Z0-9]+))/,
   // Matches hashtags: #tag (but not #project/ prefixed)
   hashtag: /#([a-zA-Z0-9_-]+)/g,
   // Tasks plugin emoji patterns
@@ -571,7 +578,7 @@ function parseTaskLine(line, lineNumber, filePath, syncTag, lastModified, requir
     return null;
   }
   const todoistIdMatch = taskContent.match(PATTERNS.todoistId);
-  const todoistId = todoistIdMatch ? todoistIdMatch[1] : null;
+  const todoistId = todoistIdMatch ? todoistIdMatch[1] || todoistIdMatch[2] : null;
   const dueDate = extractDueDate(taskContent);
   const priority = extractPriority(taskContent);
   const labels = extractLabels(taskContent, syncTag);
@@ -643,6 +650,7 @@ function extractLabels(content, syncTag) {
 function cleanTaskContent(content, syncTag) {
   let cleaned = content;
   cleaned = cleaned.replace(/<!--\s*todoist-id:\s*[\w]+\s*-->/g, "");
+  cleaned = cleaned.replace(/\s*\^todoist-[\w]+/g, "");
   const syncTagPattern = new RegExp(escapeRegex(syncTag), "gi");
   cleaned = cleaned.replace(syncTagPattern, "");
   cleaned = cleaned.replace(PATTERNS.dueDate, "");
@@ -662,7 +670,10 @@ function cleanTaskContent(content, syncTag) {
 function escapeRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
-function buildTaskLine(task, syncTag) {
+function formatTaskId(id, format = "comment") {
+  return format === "block-id" ? `^todoist-${id}` : `<!-- todoist-id:${id} -->`;
+}
+function buildTaskLine(task, syncTag, idFormat = "comment") {
   const indent = "	".repeat(task.indentLevel);
   const checkbox = task.isCompleted ? "[x]" : "[ ]";
   let line = `${indent}- ${checkbox} ${task.content}`;
@@ -686,16 +697,16 @@ function buildTaskLine(task, syncTag) {
     line += ` \u{1F4C5} ${task.dueDate}`;
   }
   if (task.todoistId) {
-    line += ` <!-- todoist-id:${task.todoistId} -->`;
+    line += ` ${formatTaskId(task.todoistId, idFormat)}`;
   }
   return line;
 }
-function addTodoistIdToLine(line, todoistId) {
+function addTodoistIdToLine(line, todoistId, idFormat = "comment") {
   var _a, _b;
   const leadingWhitespace = (_b = (_a = line.match(/^(\s*)/)) == null ? void 0 : _a[1]) != null ? _b : "";
-  const stripped = line.replace(/<!--\s*todoist-id:\s*[\w]+\s*-->/g, "").trimEnd();
+  const stripped = line.replace(/<!--\s*todoist-id:\s*[\w]+\s*-->/g, "").replace(/\s*\^todoist-[\w]+/g, "").trimEnd();
   const withoutLeading = stripped.trimStart();
-  const updated = `${leadingWhitespace}${withoutLeading} <!-- todoist-id:${todoistId} -->`;
+  const updated = `${leadingWhitespace}${withoutLeading} ${formatTaskId(todoistId, idFormat)}`;
   return updated;
 }
 function updateTaskCompletion(line, isCompleted) {
@@ -816,23 +827,6 @@ var SyncEngine = class {
         return null;
     }
     return (_a = this.todoistService.getProjectName(projectId)) != null ? _a : null;
-  }
-  /**
-   * Build a Todoist task description with a clickable source link back to the
-   * Obsidian note. The link uses the obsidian:// URI scheme so clicking in
-   * Todoist opens the note directly in the Obsidian app.
-   */
-  buildDescriptionWithSource(filePath, existingDescription) {
-    const noteRef = filePath.replace(/\.md$/i, "");
-    const vault = encodeURIComponent(this.app.vault.getName());
-    const file = encodeURIComponent(noteRef);
-    const sourceLine = `Source: [${noteRef}](obsidian://open?vault=${vault}&file=${file})`;
-    if (existingDescription && existingDescription.trim().length > 0) {
-      return `${sourceLine}
-
-${existingDescription}`;
-    }
-    return sourceLine;
   }
   getSyncState() {
     return this.syncState;
@@ -1009,7 +1003,6 @@ ${existingDescription}`;
       if (resolvedId)
         projectId = resolvedId;
     }
-    const description = this.buildDescriptionWithSource(task.filePath, task.description);
     const todoistTask = await this.todoistService.createTask(task.content, {
       projectId: parentId ? void 0 : projectId,
       // Subtasks inherit project from parent
@@ -1017,9 +1010,12 @@ ${existingDescription}`;
       priority: task.priority,
       dueDate: (_a = task.dueDate) != null ? _a : void 0,
       labels: task.labels,
-      description
+      description: task.description
     });
-    await this.updateObsidianTaskLine(task, (line) => addTodoistIdToLine(line, todoistTask.id));
+    await this.updateObsidianTaskLine(
+      task,
+      (line) => addTodoistIdToLine(line, todoistTask.id, this.settings.taskIdFormat)
+    );
     this.syncState.tasks[todoistTask.id] = {
       todoistId: todoistTask.id,
       parentId,
@@ -1179,7 +1175,7 @@ ${existingDescription}`;
       labels: (_a = todoistTask.labels) != null ? _a : [],
       projectName
     };
-    const newLine = buildTaskLine(updatedTask, this.settings.syncTag);
+    const newLine = buildTaskLine(updatedTask, this.settings.syncTag, this.settings.taskIdFormat);
     await this.replaceLineInFile(obsidianTask.filePath, obsidianTask.lineNumber, newLine);
   }
   /**
@@ -1244,7 +1240,7 @@ ${existingDescription}`;
       projectName,
       lastModified: Date.now()
     };
-    const lines = [buildTaskLine(parentParsed, this.settings.syncTag)];
+    const lines = [buildTaskLine(parentParsed, this.settings.syncTag, this.settings.taskIdFormat)];
     this.syncState.tasks[task.id] = {
       todoistId: task.id,
       parentId: (_d = task.parentId) != null ? _d : null,
@@ -1275,7 +1271,7 @@ ${existingDescription}`;
         projectName: null,
         lastModified: Date.now()
       };
-      lines.push(buildTaskLine(subParsed, this.settings.syncTag));
+      lines.push(buildTaskLine(subParsed, this.settings.syncTag, this.settings.taskIdFormat));
       this.syncState.tasks[sub.id] = {
         todoistId: sub.id,
         parentId: (_h = sub.parentId) != null ? _h : task.id,
@@ -1314,7 +1310,7 @@ ${existingDescription}`;
       isTask = true;
       prefix = taskMatch[1];
       content = taskMatch[3];
-      const todoistIdMatch = content.match(/<!--\s*todoist-id:\s*([\w]+)\s*-->/);
+      const todoistIdMatch = content.match(PATTERNS.todoistId);
       if (todoistIdMatch) {
         return { success: false, message: "Task is already synced with Todoist." };
       }
@@ -1336,10 +1332,8 @@ ${existingDescription}`;
     }
     const cleanContent = content.replace(new RegExp(this.settings.syncTag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "").replace(/#[a-zA-Z0-9_-]+/g, "").replace(/📅\s*\d{4}-\d{2}-\d{2}/g, "").replace(/🔺|⏫|🔼|🔽/g, "").replace(/📁\s*\S+/g, "").replace(/\s+/g, " ").trim();
     try {
-      const description = this.buildDescriptionWithSource(filePath, "");
       const todoistTask = await this.todoistService.createTask(cleanContent, {
-        projectId: this.settings.defaultProjectId || void 0,
-        description
+        projectId: this.settings.defaultProjectId || void 0
       });
       const file = this.app.vault.getAbstractFileByPath(filePath);
       if (!(file instanceof import_obsidian3.TFile)) {
@@ -1349,12 +1343,17 @@ ${existingDescription}`;
       const lines = fileContent.split("\n");
       let newLine;
       if (isTask) {
-        newLine = addTodoistIdToLine(lineContent, todoistTask.id);
+        newLine = addTodoistIdToLine(lineContent, todoistTask.id, this.settings.taskIdFormat);
         if (!new RegExp(this.settings.syncTag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(newLine)) {
-          newLine = newLine.replace(/(\s*)<!--/, ` ${this.settings.syncTag}$1<!--`);
+          if (this.settings.taskIdFormat === "block-id") {
+            newLine = newLine.replace(/(\s*)\^todoist-/, ` ${this.settings.syncTag}$1^todoist-`);
+          } else {
+            newLine = newLine.replace(/(\s*)<!--/, ` ${this.settings.syncTag}$1<!--`);
+          }
         }
       } else {
-        newLine = `${prefix}- [ ] ${content} <!-- todoist-id:${todoistTask.id} -->`;
+        const idSuffix = formatTaskId(todoistTask.id, this.settings.taskIdFormat);
+        newLine = `${prefix}- [ ] ${content} ${idSuffix}`;
       }
       lines[lineNumber] = newLine;
       await this.app.vault.modify(file, lines.join("\n"));
