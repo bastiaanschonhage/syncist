@@ -534,6 +534,11 @@ var PATTERNS = {
   lowPriority: /🔽/,
   // Alternative text-based due date: due:YYYY-MM-DD
   textDueDate: /due:(\d{4}-\d{2}-\d{2})/i,
+  // Dataview format patterns
+  dataviewDueDate: /\[due::\s*(\d{4}-\d{2}-\d{2})\]/i,
+  dataviewScheduledDate: /\[scheduled::\s*(\d{4}-\d{2}-\d{2})\]/i,
+  dataviewPriority: /\[priority::\s*([^\]]+)\]/i,
+  dataviewField: /\[[\w-]+::[^\]]*\]/g,
   // Project metadata: 📁 ProjectName
   project: new RegExp("\u{1F4C1}\\s*([^\\s#\u{1F4C5}\u{1F53A}\u23EB\u{1F53C}\u{1F53D}<]+)", "u")
 };
@@ -610,6 +615,12 @@ function extractDueDate(content) {
   const textMatch = content.match(PATTERNS.textDueDate);
   if (textMatch)
     return textMatch[1];
+  const dataviewDueMatch = content.match(PATTERNS.dataviewDueDate);
+  if (dataviewDueMatch)
+    return dataviewDueMatch[1];
+  const dataviewSchedMatch = content.match(PATTERNS.dataviewScheduledDate);
+  if (dataviewSchedMatch)
+    return dataviewSchedMatch[1];
   return null;
 }
 function extractPriority(content) {
@@ -624,6 +635,22 @@ function extractPriority(content) {
   }
   if (PATTERNS.lowPriority.test(content)) {
     return 1 /* NONE */;
+  }
+  const dataviewMatch = content.match(PATTERNS.dataviewPriority);
+  if (dataviewMatch) {
+    const p = dataviewMatch[1].trim().toLowerCase();
+    if (p === "highest" || p === "urgent" || p === "p1" || p === "1") {
+      return 4 /* HIGH */;
+    }
+    if (p === "high" || p === "p2" || p === "2") {
+      return 3 /* MEDIUM */;
+    }
+    if (p === "medium" || p === "p3" || p === "3") {
+      return 2 /* LOW */;
+    }
+    if (p === "low" || p === "lowest" || p === "none" || p === "p4" || p === "4") {
+      return 1 /* NONE */;
+    }
   }
   return 1 /* NONE */;
 }
@@ -654,6 +681,7 @@ function cleanTaskContent(content, syncTag) {
   cleaned = cleaned.replace(PATTERNS.mediumPriority, "");
   cleaned = cleaned.replace(PATTERNS.lowPriority, "");
   cleaned = cleaned.replace(PATTERNS.textDueDate, "");
+  cleaned = cleaned.replace(PATTERNS.dataviewField, "");
   cleaned = cleaned.replace(PATTERNS.project, "");
   cleaned = cleaned.replace(/#[a-zA-Z0-9_-]+/g, "");
   cleaned = cleaned.replace(/\s+/g, " ").trim();
@@ -816,23 +844,6 @@ var SyncEngine = class {
         return null;
     }
     return (_a = this.todoistService.getProjectName(projectId)) != null ? _a : null;
-  }
-  /**
-   * Build a Todoist task description with a clickable source link back to the
-   * Obsidian note. The link uses the obsidian:// URI scheme so clicking in
-   * Todoist opens the note directly in the Obsidian app.
-   */
-  buildDescriptionWithSource(filePath, existingDescription) {
-    const noteRef = filePath.replace(/\.md$/i, "");
-    const vault = encodeURIComponent(this.app.vault.getName());
-    const file = encodeURIComponent(noteRef);
-    const sourceLine = `Source: [${noteRef}](obsidian://open?vault=${vault}&file=${file})`;
-    if (existingDescription && existingDescription.trim().length > 0) {
-      return `${sourceLine}
-
-${existingDescription}`;
-    }
-    return sourceLine;
   }
   getSyncState() {
     return this.syncState;
@@ -1009,7 +1020,6 @@ ${existingDescription}`;
       if (resolvedId)
         projectId = resolvedId;
     }
-    const description = this.buildDescriptionWithSource(task.filePath, task.description);
     const todoistTask = await this.todoistService.createTask(task.content, {
       projectId: parentId ? void 0 : projectId,
       // Subtasks inherit project from parent
@@ -1017,7 +1027,7 @@ ${existingDescription}`;
       priority: task.priority,
       dueDate: (_a = task.dueDate) != null ? _a : void 0,
       labels: task.labels,
-      description
+      description: task.description
     });
     await this.updateObsidianTaskLine(task, (line) => addTodoistIdToLine(line, todoistTask.id));
     this.syncState.tasks[todoistTask.id] = {
@@ -1336,10 +1346,8 @@ ${existingDescription}`;
     }
     const cleanContent = content.replace(new RegExp(this.settings.syncTag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "").replace(/#[a-zA-Z0-9_-]+/g, "").replace(/📅\s*\d{4}-\d{2}-\d{2}/g, "").replace(/🔺|⏫|🔼|🔽/g, "").replace(/📁\s*\S+/g, "").replace(/\s+/g, " ").trim();
     try {
-      const description = this.buildDescriptionWithSource(filePath, "");
       const todoistTask = await this.todoistService.createTask(cleanContent, {
-        projectId: this.settings.defaultProjectId || void 0,
-        description
+        projectId: this.settings.defaultProjectId || void 0
       });
       const file = this.app.vault.getAbstractFileByPath(filePath);
       if (!(file instanceof import_obsidian3.TFile)) {
