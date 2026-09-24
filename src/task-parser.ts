@@ -3,7 +3,7 @@ import { ParsedObsidianTask, TodoistPriority } from './types';
 /**
  * Regex patterns for task parsing
  */
-const PATTERNS = {
+export const PATTERNS = {
   // Matches markdown task: - [ ] or - [x] or * [ ] etc.
   task: /^(\s*)[-*]\s+\[([ xX])\]\s+(.*)$/,
   // Matches Todoist ID comment: <!-- todoist-id:abc123 --> (v1 IDs are alphanumeric)
@@ -21,6 +21,11 @@ const PATTERNS = {
   lowPriority: /🔽/,
   // Alternative text-based due date: due:YYYY-MM-DD
   textDueDate: /due:(\d{4}-\d{2}-\d{2})/i,
+  // Dataview format patterns
+  dataviewDueDate: /\[due::\s*(\d{4}-\d{2}-\d{2})\]/i,
+  dataviewScheduledDate: /\[scheduled::\s*(\d{4}-\d{2}-\d{2})\]/i,
+  dataviewPriority: /\[priority::\s*([^\]]+)\]/i,
+  dataviewField: /\[[\w-]+::[^\]]*\]/g,
   // Project metadata: 📁 ProjectName
   project: new RegExp('📁\\s*([^\\s#📅🔺⏫🔼🔽<]+)', 'u'),
 };
@@ -129,11 +134,17 @@ function extractDueDate(content: string): string | null {
   const textMatch = content.match(PATTERNS.textDueDate);
   if (textMatch) return textMatch[1];
 
+  const dataviewDueMatch = content.match(PATTERNS.dataviewDueDate);
+  if (dataviewDueMatch) return dataviewDueMatch[1];
+
+  const dataviewSchedMatch = content.match(PATTERNS.dataviewScheduledDate);
+  if (dataviewSchedMatch) return dataviewSchedMatch[1];
+
   return null;
 }
 
 /**
- * Extract priority from task content (Tasks plugin emoji format)
+ * Extract priority from task content (Tasks plugin emoji format or Dataview syntax)
  */
 function extractPriority(content: string): TodoistPriority {
   if (PATTERNS.urgentPriority.test(content)) {
@@ -148,6 +159,24 @@ function extractPriority(content: string): TodoistPriority {
   if (PATTERNS.lowPriority.test(content)) {
     return TodoistPriority.NONE;
   }
+
+  const dataviewMatch = content.match(PATTERNS.dataviewPriority);
+  if (dataviewMatch) {
+    const p = dataviewMatch[1].trim().toLowerCase();
+    if (p === 'highest' || p === 'urgent' || p === 'p1' || p === '1') {
+      return TodoistPriority.HIGH;
+    }
+    if (p === 'high' || p === 'p2' || p === '2') {
+      return TodoistPriority.MEDIUM;
+    }
+    if (p === 'medium' || p === 'p3' || p === '3') {
+      return TodoistPriority.LOW;
+    }
+    if (p === 'low' || p === 'lowest' || p === 'none' || p === 'p4' || p === '4') {
+      return TodoistPriority.NONE;
+    }
+  }
+
   return TodoistPriority.NONE;
 }
 
@@ -175,7 +204,7 @@ function extractLabels(content: string, syncTag: string): string[] {
 /**
  * Clean task content by removing metadata, keeping only the task description
  */
-function cleanTaskContent(content: string, syncTag: string): string {
+export function cleanTaskContent(content: string, syncTag: string): string {
   let cleaned = content;
 
   cleaned = cleaned.replace(/<!--\s*todoist-id:\s*[\w]+\s*-->/g, '');
@@ -193,6 +222,9 @@ function cleanTaskContent(content: string, syncTag: string): string {
   cleaned = cleaned.replace(PATTERNS.lowPriority, '');
 
   cleaned = cleaned.replace(PATTERNS.textDueDate, '');
+
+  // Remove Dataview inline fields like [due:: 2026-09-30], [created:: 2026-09-16], [priority:: high]
+  cleaned = cleaned.replace(PATTERNS.dataviewField, '');
 
   // Remove project metadata
   cleaned = cleaned.replace(PATTERNS.project, '');
