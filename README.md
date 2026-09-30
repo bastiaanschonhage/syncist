@@ -13,7 +13,8 @@ When you add the `#todoist` tag to a task (or checkbox item) it will automatical
 - **Import from Todoist**: Search and import any Todoist task (with its subtasks) into your note via a fuzzy-search modal
 - **Projects & Labels**: Per-task project assignment with `📁 ProjectName` metadata, bidirectional label sync via `#hashtags`
 - **Query Blocks**: Embed live Todoist task lists in your notes using `syncist` code blocks (e.g., `filter: today`)
-- **Tasks Plugin Compatible**: Works with the popular Obsidian Tasks plugin emojis (📅, ⏫, 🔼, 🔽)
+- **Tasks Plugin Compatible**: Works with the popular Obsidian Tasks plugin emojis (📅, 🔺, ⏫, 🔼, 🔽)
+- **Shorthand**: Type `p1`–`p4` for priority and `today`, `tomorrow` or `dd/mm` for the due date — no emoji picker needed
 - **Configurable**: Customize sync tag, default project, sync interval, and conflict resolution
 - **Commands**: Quick commands to create tasks, import tasks, and trigger sync
 - **Conflict Resolution**: Choose how to handle conflicts (Obsidian wins, Todoist wins, or ask)
@@ -51,6 +52,7 @@ When you add the `#todoist` tag to a task (or checkbox item) it will automatical
    - **Default Project**: Where new tasks go (default: Inbox)
    - **Sync Interval**: Auto-sync frequency in minutes
    - **Conflict Resolution**: How to handle conflicting changes
+   - **Shorthand priorities and dates**: Recognize `p1`–`p4`, `today`, `tomorrow` and `dd/mm[/yy[yy]]` (default: on)
 
 ### Usage
 
@@ -59,12 +61,48 @@ Add the `#todoist` tag to any task:
 ```markdown
 - [ ] Buy groceries #todoist
 - [ ] Meeting with team #todoist 📅 2026-01-28 ⏫
+- [ ] Call the dentist p1 tomorrow #todoist
 ```
 
 After sync, the task will have a Todoist ID:
 ```markdown
 - [ ] Buy groceries #todoist <!-- todoist-id:8765432109 -->
 ```
+
+#### Shorthand Priorities and Dates
+Instead of the emojis you can type the priority and due date as plain words anywhere in the task:
+```markdown
+- [ ] Call the dentist p1 tomorrow #todoist
+- [ ] Renew passport p2 15/11 #todoist
+```
+
+| Shorthand | Meaning |
+|-----------|---------|
+| `p1` / `p2` / `p3` / `p4` | Priority, same as in Todoist (`p1` is highest, `p4` is none) |
+| `today`, `tomorrow` | Due today / tomorrow |
+| `dd/mm` | Next occurrence of that date (e.g. `15/11`; a date already passed this year means next year) |
+| `dd/mm/yy`, `dd/mm/yyyy` | Exact date (e.g. `15/11/27`, `15/11/2027`) |
+
+On the next sync the shorthand is sent to Todoist and rewritten in your note to the emoji format, e.g. the first task becomes:
+```markdown
+- [ ] Call the dentist #todoist 🔺 📅 2026-10-01 <!-- todoist-id:8765432109 -->
+```
+This pins relative dates like `today`, so they don't change on later syncs. To change a priority or date later, just type a new shorthand at the end of the line — it overrides the existing emoji.
+
+While you type, the shorthand that will be converted is **highlighted in green** in the editor; hover it to see what it means (e.g. `Syncist: Due 2026-11-15`).
+
+**The last one on the line wins.** Only the last priority and the last date on a line count, whether shorthand or emoji. Earlier words stay part of the title:
+```markdown
+- [ ] Plan p2 roadmap today p1 tomorrow #todoist
+```
+becomes the task "Plan p2 roadmap today" with priority p1, due tomorrow. After the sync the `🔺 📅` emojis come last on the line, so the `p2` and `today` left in the title are not picked up again. For the same reason, shorthand typed *before* an existing emoji is ignored — type it at the end.
+
+Things to know:
+- Shorthand must be a separate word: `mp3`, `#p1` or `today's` are not recognized, and neither are invalid dates like `31/02`
+- Dates are always day-first (`dd/mm`)
+- This also applies to task titles that come from Todoist, when the task has no due date: a title like `Buy 1/2 kg` would be read as a due date (the green highlight shows this). Turn off **Shorthand priorities and dates** in settings if that is a problem
+- `p4` is written as `🔽`, so a `pN` word left in the title is not read as the priority later
+- The emoji format keeps working either way
 
 #### Subtasks
 Indent tasks beneath a `#todoist`-tagged parent. Subtasks inherit the sync tag automatically — you do **not** need to add `#todoist` to each one:
@@ -129,13 +167,14 @@ Each query block includes a refresh button and shows when it was last updated.
 
 ### Supported Task Formats
 
-| Emoji | Meaning | Todoist Mapping |
-|-------|---------|-----------------|
-| 📅 | Due date | Task due date |
-| ⏫ | High priority | Priority 4 |
-| 🔼 | Medium priority | Priority 3 |
-| 🔽 | Low priority | Priority 2 |
-| 📁 | Project | Task project |
+| Emoji | Shorthand | Meaning | Todoist Mapping |
+|-------|-----------|---------|-----------------|
+| 📅 YYYY-MM-DD | `today`, `tomorrow`, `dd/mm`, `dd/mm/yy`, `dd/mm/yyyy` | Due date | Task due date |
+| 🔺 | `p1` | Highest priority | p1 |
+| ⏫ | `p2` | High priority | p2 |
+| 🔼 | `p3` | Medium priority | p3 |
+| 🔽 or none | `p4` | Low / no priority | p4 |
+| 📁 | — | Project | Task project |
 
 ### Network Usage
 

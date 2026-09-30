@@ -23,7 +23,163 @@ const PATTERNS = {
   textDueDate: /due:(\d{4}-\d{2}-\d{2})/i,
   // Project metadata: 📁 ProjectName
   project: new RegExp('📁\\s*([^\\s#📅🔺⏫🔼🔽<]+)', 'u'),
+  // Any priority emoji (used when a shorthand priority replaces it)
+  anyPriorityEmoji: /[ \t]*(🔺|⏫|🔼|🔽)/gu,
 };
+
+/**
+ * Shorthand metadata, typed as a separate (whitespace-delimited) word.
+ * Group 1 is the preceding whitespace so a match can be removed cleanly.
+ * Created per call because global regexes carry lastIndex state.
+ */
+const shorthandPriorityRegex = (): RegExp => /(^|\s)p([1-4])(?=\s|$)/gi;
+const shorthandDateRegex = (): RegExp =>
+  /(^|\s)(today|tomorrow|\d{1,2}\/\d{1,2}(?:\/\d{2}(?:\d{2})?)?)(?=\s|$)/gi;
+const emojiDueDateRegex = (): RegExp => /[ \t]*(?:📅\s*|due:)\d{4}-\d{2}-\d{2}/giu;
+
+interface ShorthandMatch<T> {
+  /** Start of the match, including the preceding whitespace */
+  start: number;
+  /** End of the match (exclusive) */
+  end: number;
+  /** Whitespace preceding the token */
+  leading: string;
+  value: T;
+}
+
+/**
+ * Find the shorthand priority (p1–p4, Todoist-style: p1 is highest) that
+ * applies to this text. The last priority on the line wins, so only the last
+ * pN counts, and only if no priority emoji comes after it. Earlier pN words
+ * stay part of the title.
+ */
+function findActivePriority(text: string): ShorthandMatch<TodoistPriority> | null {
+  const regex = shorthandPriorityRegex();
+  let last: RegExpExecArray | null = null;
+  let match;
+  while ((match = regex.exec(text)) !== null) last = match;
+  if (!last) return null;
+
+  const start = last.index;
+  if (lastMatchIndex(text, PATTERNS.anyPriorityEmoji) > start) return null;
+  return {
+    start,
+    end: start + last[0].length,
+    leading: last[1],
+    // p1 → 4 (urgent) … p4 → 1 (normal), matching the Todoist API values
+    value: 5 - parseInt(last[2], 10),
+  };
+}
+
+/**
+ * Find the shorthand due date (today, tomorrow, dd/mm, dd/mm/yy, dd/mm/yyyy)
+ * that applies to this text: the last valid one, and only if no 📅 date comes
+ * after it. Tokens that are not a real calendar date (e.g. 31/02) are skipped.
+ */
+function findActiveDate(text: string, today: Date = new Date()): ShorthandMatch<string> | null {
+  const regex = shorthandDateRegex();
+  let active: ShorthandMatch<string> | null = null;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const date = resolveShorthandDate(match[2], today);
+    if (date) {
+      active = { start: match.index, end: match.index + match[0].length, leading: match[1], value: date };
+    }
+  }
+  if (!active) return null;
+
+  if (lastMatchIndex(text, emojiDueDateRegex()) > active.start) return null;
+  return active;
+}
+
+/**
+ * Index of the last match of a global regex in text, or -1.
+ */
+function lastMatchIndex(text: string, regex: RegExp): number {
+  regex.lastIndex = 0;
+  let index = -1;
+  let match;
+  while ((match = regex.exec(text)) !== null) index = match.index;
+  regex.lastIndex = 0;
+  return index;
+}
+
+/**
+ * Resolve a shorthand date token to YYYY-MM-DD (local time), or null if invalid.
+ * A dd/mm without a year resolves to its next occurrence (today or later).
+ */
+function resolveShorthandDate(token: string, today: Date): string | null {
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const word = token.toLowerCase();
+  if (word === 'today') return formatLocalDate(startOfToday);
+  if (word === 'tomorrow') {
+    return formatLocalDate(new Date(startOfToday.getFullYear(), startOfToday.getMonth(), startOfToday.getDate() + 1));
+  }
+
+  const [dayPart, monthPart, yearPart] = token.split('/');
+  const day = parseInt(dayPart, 10);
+  const month = parseInt(monthPart, 10);
+  let year: number;
+  if (yearPart === undefined) {
+    year = startOfToday.getFullYear();
+    if (new Date(year, month - 1, day) < startOfToday) year++;
+  } else {
+    year = parseInt(yearPart, 10) + (yearPart.length === 2 ? 2000 : 0);
+  }
+
+  // Reject overflowing dates (Date rolls 31/02 over to March)
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    return null;
+  }
+  return formatLocalDate(date);
+}
+
+function formatLocalDate(date: Date): string {
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${mm}-${dd}`;
+}
+
+/**
+ * Replace a shorthand match, keeping its leading whitespace unless the
+ * replacement is empty (then the whole match is removed).
+ */
+function replaceMatch<T>(text: string, match: ShorthandMatch<T>, replacement: string): string {
+  const insert = replacement ? `${match.leading}${replacement}` : '';
+  return text.slice(0, match.start) + insert + text.slice(match.end);
+}
+
+/**
+ * A shorthand token that will be converted on sync, for editor highlighting.
+ */
+export interface ShorthandSpan {
+  /** Start of the token itself (without preceding whitespace) */
+  start: number;
+  end: number;
+  /** Human readable meaning, e.g. "Priority p1" or "Due 2026-10-01" */
+  label: string;
+}
+
+/**
+ * Find the shorthand tokens in a line that a sync would convert.
+ */
+export function findShorthandSpans(line: string, today: Date = new Date()): ShorthandSpan[] {
+  const spans: ShorthandSpan[] = [];
+  const priority = findActivePriority(line);
+  if (priority) {
+    spans.push({
+      start: priority.start + priority.leading.length,
+      end: priority.end,
+      label: `Priority p${5 - priority.value}`,
+    });
+  }
+  const date = findActiveDate(line, today);
+  if (date) {
+    spans.push({ start: date.start + date.leading.length, end: date.end, label: `Due ${date.value}` });
+  }
+  return spans.sort((x, y) => x.start - y.start);
+}
 
 /**
  * Compute indentation level from leading whitespace.
@@ -64,7 +220,8 @@ export function parseTaskLine(
   filePath: string,
   syncTag: string,
   lastModified: number,
-  requireSyncTag = true
+  requireSyncTag = true,
+  parseShorthand = true
 ): ParsedObsidianTask | null {
   const match = line.match(PATTERNS.task);
   if (!match) return null;
@@ -82,10 +239,10 @@ export function parseTaskLine(
   const todoistIdMatch = taskContent.match(PATTERNS.todoistId);
   const todoistId = todoistIdMatch ? todoistIdMatch[1] : null;
 
-  const dueDate = extractDueDate(taskContent);
-  const priority = extractPriority(taskContent);
+  const dueDate = extractDueDate(taskContent, parseShorthand);
+  const priority = extractPriority(taskContent, parseShorthand);
   const labels = extractLabels(taskContent, syncTag);
-  const content = cleanTaskContent(taskContent, syncTag);
+  const content = cleanTaskContent(taskContent, syncTag, parseShorthand);
   const indentLevel = getIndentLevel(line);
   const projectName = extractProjectName(taskContent);
 
@@ -117,9 +274,15 @@ function extractProjectName(content: string): string | null {
 }
 
 /**
- * Extract due date from task content
+ * Extract due date from task content. Shorthand (today, dd/mm, …) takes
+ * precedence over emoji dates, so typing a new date overrides the old one.
  */
-function extractDueDate(content: string): string | null {
+function extractDueDate(content: string, parseShorthand: boolean): string | null {
+  if (parseShorthand) {
+    const shorthand = findActiveDate(content);
+    if (shorthand) return shorthand.value;
+  }
+
   const emojiMatch = content.match(PATTERNS.dueDate);
   if (emojiMatch) return emojiMatch[1];
 
@@ -133,9 +296,14 @@ function extractDueDate(content: string): string | null {
 }
 
 /**
- * Extract priority from task content (Tasks plugin emoji format)
+ * Extract priority from task content. Shorthand (p1–p4) takes precedence
+ * over the Tasks plugin emoji format.
  */
-function extractPriority(content: string): TodoistPriority {
+function extractPriority(content: string, parseShorthand: boolean): TodoistPriority {
+  if (parseShorthand) {
+    const shorthand = findActivePriority(content);
+    if (shorthand) return shorthand.value;
+  }
   if (PATTERNS.urgentPriority.test(content)) {
     return TodoistPriority.HIGH;
   }
@@ -175,8 +343,15 @@ function extractLabels(content: string, syncTag: string): string[] {
 /**
  * Clean task content by removing metadata, keeping only the task description
  */
-function cleanTaskContent(content: string, syncTag: string): string {
+function cleanTaskContent(content: string, syncTag: string, parseShorthand: boolean): string {
   let cleaned = content;
+
+  if (parseShorthand) {
+    const priority = findActivePriority(cleaned);
+    if (priority) cleaned = replaceMatch(cleaned, priority, '');
+    const date = findActiveDate(cleaned);
+    if (date) cleaned = replaceMatch(cleaned, date, '');
+  }
 
   cleaned = cleaned.replace(/<!--\s*todoist-id:\s*[\w]+\s*-->/g, '');
 
@@ -242,6 +417,9 @@ export function buildTaskLine(task: ParsedObsidianTask, syncTag: string): string
     line += ' ⏫';
   } else if (task.priority === TodoistPriority.LOW) {
     line += ' 🔼';
+  } else if (findActivePriority(task.content)) {
+    // A pN word in the title would otherwise be read as the priority
+    line += ' 🔽';
   }
 
   if (task.dueDate) {
@@ -253,6 +431,36 @@ export function buildTaskLine(task: ParsedObsidianTask, syncTag: string): string
   }
 
   return line;
+}
+
+/**
+ * Rewrite shorthand metadata in a task line to the canonical emoji format:
+ * `p1` → `🔺`, `tomorrow` → `📅 2026-01-02`, etc. Only the shorthand that
+ * applies (the last on the line, see findActivePriority / findActiveDate) is
+ * converted, and it replaces any earlier priority emoji or due date. Relative
+ * dates must be pinned this way, or "today" would mean a new date every day.
+ */
+export function normalizeShorthand(line: string, today: Date = new Date()): string {
+  let result = line;
+
+  if (findActivePriority(result)) {
+    result = result.replace(PATTERNS.anyPriorityEmoji, '');
+    const priority = findActivePriority(result);
+    if (priority) {
+      // p4 is written as 🔽 rather than nothing, so an earlier pN word in the
+      // title doesn't become the active priority on the next sync
+      const emoji = priorityToEmoji(priority.value) || '🔽';
+      result = replaceMatch(result, priority, emoji);
+    }
+  }
+
+  if (findActiveDate(result, today)) {
+    result = result.replace(emojiDueDateRegex(), '');
+    const date = findActiveDate(result, today);
+    if (date) result = replaceMatch(result, date, `📅 ${date.value}`);
+  }
+
+  return result;
 }
 
 /**
@@ -286,7 +494,8 @@ export function parseTasksFromContent(
   content: string,
   filePath: string,
   syncTag: string,
-  lastModified: number
+  lastModified: number,
+  parseShorthand = true
 ): ParsedObsidianTask[] {
   const lines = content.split('\n');
   const tasks: ParsedObsidianTask[] = [];
@@ -299,7 +508,7 @@ export function parseTasksFromContent(
     const lineIndent = getIndentLevel(line);
 
     // First, try parsing as a tagged task (has the sync tag itself)
-    let task = parseTaskLine(line, i, filePath, syncTag, lastModified, true);
+    let task = parseTaskLine(line, i, filePath, syncTag, lastModified, true, parseShorthand);
 
     if (task) {
       // Pop stack entries at same or deeper indent (new top-level or sibling)
@@ -330,7 +539,7 @@ export function parseTasksFromContent(
 
       if (parentStack.length > 0) {
         // Parse without requiring the sync tag (subtask inherits)
-        task = parseTaskLine(line, i, filePath, syncTag, lastModified, false);
+        task = parseTaskLine(line, i, filePath, syncTag, lastModified, false, parseShorthand);
 
         if (task) {
           const parent = parentStack[parentStack.length - 1].task;

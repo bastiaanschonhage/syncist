@@ -5,6 +5,14 @@
   width: 300px;
 }
 
+/* ─── Shorthand highlighting (editor) ─── */
+
+.syncist-shorthand {
+  color: var(--color-green);
+  background-color: rgba(var(--color-green-rgb), 0.15);
+  border-radius: var(--radius-s);
+}
+
 /* ─── Import Modal ─── */
 
 .syncist-import-suggestion {

@@ -4,6 +4,7 @@ import { TodoistService } from './todoist-service';
 import { SyncEngine } from './sync-engine';
 import { ImportTaskModal } from './import-modal';
 import { renderQueryBlock } from './query-renderer';
+import { shorthandHighlighter } from './shorthand-highlighter';
 import {
   TodoistSyncSettings,
   DEFAULT_SETTINGS,
@@ -60,6 +61,9 @@ export default class TodoistSyncPlugin extends Plugin {
     this.registerMarkdownCodeBlockProcessor('syncist', (source, el) => {
       renderQueryBlock(source, el, this);
     });
+
+    // Highlight shorthand (p1, today, dd/mm, …) that the next sync will convert
+    this.registerEditorExtension(shorthandHighlighter(() => this.settings));
 
     // Start sync interval
     this.startSyncInterval();

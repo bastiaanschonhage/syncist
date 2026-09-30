@@ -1,4 +1,4 @@
-# Syncist v2.0.0 - Test Specification
+# Syncist v2.3.0 - Test Specification
 
 ## Prerequisites
 
@@ -14,7 +14,7 @@
 
 ## Part A: Regression Tests (Existing Features)
 
-These tests verify that v1.0 functionality still works correctly after the v2.0 changes.
+These tests verify that existing functionality still works correctly after the v2.3 changes. Part G covers the new shorthand priorities and dates.
 
 ### A1. Basic task creation with sync tag
 
@@ -52,11 +52,12 @@ These tests verify that v1.0 functionality still works correctly after the v2.0 
 
 ### A5. Priority emojis
 
-1. Create: `- [ ] High prio task #todoist ⏫`
-2. Create: `- [ ] Medium prio task #todoist 🔼`
-3. Create: `- [ ] Low prio task #todoist 🔽`
-4. Sync
-5. **Expected**: Each task appears in Todoist with the correct priority (p1, p2, p3)
+1. Create: `- [ ] Urgent prio task #todoist 🔺`
+2. Create: `- [ ] High prio task #todoist ⏫`
+3. Create: `- [ ] Medium prio task #todoist 🔼`
+4. Create: `- [ ] Low prio task #todoist 🔽`
+5. Sync
+6. **Expected**: Each task appears in Todoist with the correct priority (p1, p2, p3, p4)
 - [ ] **PASS** / **FAIL**
 
 ### A6. Due date sync
@@ -378,6 +379,85 @@ Test each of these query blocks (create one block per filter):
 
 ---
 
+## Part G: Shorthand Priorities and Dates
+
+> Setting **Shorthand priorities and dates** must be enabled (default). Examples below assume today is 2026-09-30; adjust expected dates to your own date.
+
+### G1. Shorthand priority
+
+1. Create: `- [ ] Shorthand prio-1 task p1 #todoist`
+2. Create: `- [ ] Shorthand prio-2 task p2 #todoist`
+3. Create: `- [ ] Shorthand prio-3 task p3 #todoist`
+4. Create: `- [ ] Shorthand prio-4 task p4 #todoist`
+5. Sync
+6. **Expected**: Todoist priorities are p1, p2, p3, p4. Titles are `Shorthand prio-N task` (the `pN` is removed). Lines are rewritten to `🔺`, `⏫`, `🔼`, `🔽`
+- [ ] **PASS** / **FAIL**
+
+### G2. today / tomorrow
+
+1. Create: `- [ ] Due today task today #todoist` and `- [ ] Due tomorrow task tomorrow #todoist`
+2. Before syncing, check that only the **last** `today` / `tomorrow` is highlighted in green
+3. Sync
+4. **Expected**: Due dates are today and tomorrow in Todoist. Only the last word is converted: lines become `Due today task 📅 <today>` and `Due tomorrow task 📅 <tomorrow>`, and the titles in Todoist are `Due today task` / `Due tomorrow task`
+5. Sync again the next day (or change the date in Todoist and back): the word left in the title is **not** picked up again, because the `📅` date after it wins
+- [ ] **PASS** / **FAIL**
+
+### G3. dd/mm formats
+
+1. Create: `- [ ] Short date 25/12 #todoist`
+2. Create: `- [ ] Two-digit year 25/12/27 #todoist`
+3. Create: `- [ ] Four-digit year 25/12/2028 #todoist`
+4. Create: `- [ ] Past date 1/1 #todoist`
+5. Sync
+6. **Expected**: Due dates 2026-12-25, 2027-12-25, 2028-12-25, and 2027-01-01 (a dd/mm already passed this year rolls over to next year)
+- [ ] **PASS** / **FAIL**
+
+### G4. Shorthand overrides emoji on existing task
+
+1. Take a synced task with `⏫ 📅 2026-12-25`
+2. Append `p3 tomorrow` to the line and sync
+3. **Expected**: Todoist task gets priority p3 and tomorrow's date. Line now shows `🔼 📅 <tomorrow>`; the old `⏫` and date are gone
+- [ ] **PASS** / **FAIL**
+
+### G5. Non-matching text is left alone
+
+1. Create: `- [ ] Convert mp3 on 31/02 for today's meeting #p1 #todoist`
+2. Sync
+3. **Expected**: No priority, no due date (31/02 is not a real date). Title is `Convert mp3 on 31/02 for today's meeting`, `p1` becomes a label
+- [ ] **PASS** / **FAIL**
+
+### G6. Create task from current line with shorthand
+
+1. Type `Plan trip p2 tomorrow` on a plain line
+2. Run **Syncist: Create task from current line**
+3. **Expected**: Todoist task "Plan trip" with priority p2 and tomorrow's date. Line is rewritten with `⏫ 📅 <tomorrow>` and a todoist-id
+- [ ] **PASS** / **FAIL**
+
+### G7. Shorthand disabled
+
+1. Turn off **Shorthand priorities and dates** in settings
+2. Create: `- [ ] Literal p1 today #todoist` and sync
+3. **Expected**: Todoist title is `Literal p1 today`, no priority or date. The line is not rewritten. Emoji priorities and dates still work
+- [ ] **PASS** / **FAIL**
+
+### G8. Only the last one on the line counts
+
+1. Create: `- [ ] Review p2 design p3 #todoist`
+2. Create: `- [ ] Earlier words p1 tomorrow #todoist ⏫ 📅 2026-12-25`
+3. Sync
+4. **Expected**: The first task gets priority p3 and title `Review p2 design`. The second task stays at p2 and 2026-12-25, with title `Earlier words p1 tomorrow`, because the emojis come after the shorthand
+- [ ] **PASS** / **FAIL**
+
+### G9. Highlighting in the editor
+
+1. In a note, type `- [ ] Call mom p1 15/11 #todoist` (don't sync yet)
+2. **Expected**: `p1` and `15/11` are highlighted in green, in both source mode and live preview. Hovering shows `Syncist: Priority p1` and `Syncist: Due <date>`
+3. Type the same line without `#todoist`: nothing is highlighted (it won't sync). Add it as an indented subtask under a synced task: it is highlighted
+4. Turn off **Shorthand priorities and dates**: the highlighting disappears
+- [ ] **PASS** / **FAIL**
+
+---
+
 ## Test Summary
 
 | Section | Tests | Passed | Failed |
@@ -388,9 +468,10 @@ Test each of these query blocks (create one block per filter):
 | D. Projects & Labels | 6 | | |
 | E. Query Blocks | 8 | | |
 | F. Edge Cases | 6 | | |
-| **Total** | **41** | | |
+| G. Shorthand | 9 | | |
+| **Total** | **50** | | |
 
 **Tested by**: ___________________
 **Date**: ___________________
-**Plugin version**: 2.0.0
+**Plugin version**: 2.3.0
 **Obsidian version**: ___________________

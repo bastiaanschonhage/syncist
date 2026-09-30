@@ -12,6 +12,8 @@ export interface TodoistSyncSettings {
   syncIntervalMinutes: number;
   /** Conflict resolution strategy */
   conflictResolution: ConflictResolution;
+  /** Recognize shorthand metadata (p1–p4, today, tomorrow, dd/mm[/yy[yy]]) */
+  parseShorthand: boolean;
 }
 
 /**
@@ -28,6 +30,7 @@ export const DEFAULT_SETTINGS: TodoistSyncSettings = {
   defaultProjectId: '',
   syncIntervalMinutes: 5,
   conflictResolution: 'todoist-wins',
+  parseShorthand: true,
 };
 
 /**

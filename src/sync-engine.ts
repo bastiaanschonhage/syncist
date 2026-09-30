@@ -6,6 +6,8 @@ import {
   addTodoistIdToLine,
   updateTaskCompletion,
   generateContentHash,
+  normalizeShorthand,
+  parseTaskLine,
 } from './task-parser';
 import {
   ParsedObsidianTask,
@@ -113,6 +115,10 @@ export class SyncEngine {
       console.debug('Todoist Sync: Scanning vault for tasks...');
       const obsidianTasks = await this.getAllObsidianTasks();
       console.debug(`Todoist Sync: Found ${obsidianTasks.length} tasks with ${this.settings.syncTag} tag`);
+
+      if (this.settings.parseShorthand) {
+        await this.normalizeShorthandLines(obsidianTasks);
+      }
 
       const syncedObsidianTasks = new Map<string, ParsedObsidianTask>();
       const newObsidianTasks: ParsedObsidianTask[] = [];
@@ -262,7 +268,8 @@ export class SyncEngine {
           content,
           file.path,
           this.settings.syncTag,
-          file.stat.mtime
+          file.stat.mtime,
+          this.settings.parseShorthand
         );
         tasks.push(...fileTasks);
       } catch (error) {
@@ -272,6 +279,45 @@ export class SyncEngine {
 
     console.debug(`Todoist Sync: Scan complete — ${files.length} files, ${tasks.length} tasks found`);
     return tasks;
+  }
+
+  /**
+   * Rewrite shorthand metadata (p1, today, dd/mm, …) in task lines to the
+   * emoji format. The parsed tasks already hold the resolved values; this
+   * pins them in the note so relative dates don't shift on later syncs.
+   */
+  private async normalizeShorthandLines(tasks: ParsedObsidianTask[]): Promise<void> {
+    const tasksByFile = new Map<string, ParsedObsidianTask[]>();
+    for (const task of tasks) {
+      if (normalizeShorthand(task.originalLine) === task.originalLine) continue;
+      const fileTasks = tasksByFile.get(task.filePath) ?? [];
+      fileTasks.push(task);
+      tasksByFile.set(task.filePath, fileTasks);
+    }
+
+    for (const [filePath, fileTasks] of tasksByFile) {
+      const file = this.app.vault.getAbstractFileByPath(filePath);
+      if (!(file instanceof TFile)) continue;
+
+      try {
+        const content = await this.app.vault.read(file);
+        const lines = content.split('\n');
+        let changed = false;
+        for (const task of fileTasks) {
+          // Skip lines edited since the scan; they are picked up next sync
+          if (lines[task.lineNumber] !== task.originalLine) continue;
+          const normalized = normalizeShorthand(task.originalLine);
+          lines[task.lineNumber] = normalized;
+          task.originalLine = normalized;
+          changed = true;
+        }
+        if (changed) {
+          await this.app.vault.modify(file, lines.join('\n'));
+        }
+      } catch (error) {
+        console.error(`Todoist Sync: Failed to normalize shorthand in ${filePath}:`, error);
+      }
+    }
   }
 
   /**
@@ -700,18 +746,34 @@ export class SyncEngine {
       prefix = lineContent.match(/^(\s*)/)?.[1] ?? '';
     }
 
-    const cleanContent = content
-      .replace(new RegExp(this.settings.syncTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '')
-      .replace(/#[a-zA-Z0-9_-]+/g, '')
-      .replace(/📅\s*\d{4}-\d{2}-\d{2}/g, '')
-      .replace(/🔺|⏫|🔼|🔽/g, '')
-      .replace(/📁\s*\S+/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
+    // Parse the line like a sync would, so metadata (priority, due date,
+    // labels, project, shorthand) is sent to Todoist rather than kept in the title
+    const parsed = parseTaskLine(
+      `- [ ] ${content}`,
+      lineNumber,
+      filePath,
+      this.settings.syncTag,
+      Date.now(),
+      false,
+      this.settings.parseShorthand
+    );
+    if (!parsed || !parsed.content) {
+      return { success: false, message: 'Cannot create task without a title.' };
+    }
+    const cleanContent = parsed.content;
 
     try {
+      let projectId = this.settings.defaultProjectId || undefined;
+      if (parsed.projectName) {
+        await this.todoistService.ensureProjectCache();
+        projectId = this.todoistService.getProjectIdByName(parsed.projectName) ?? projectId;
+      }
+
       const todoistTask = await this.todoistService.createTask(cleanContent, {
-        projectId: this.settings.defaultProjectId || undefined,
+        projectId,
+        priority: parsed.priority,
+        dueDate: parsed.dueDate ?? undefined,
+        labels: parsed.labels,
       });
 
       const file = this.app.vault.getAbstractFileByPath(filePath);
@@ -731,6 +793,9 @@ export class SyncEngine {
       } else {
         newLine = `${prefix}- [ ] ${content} <!-- todoist-id:${todoistTask.id} -->`;
       }
+      if (this.settings.parseShorthand) {
+        newLine = normalizeShorthand(newLine);
+      }
 
       lines[lineNumber] = newLine;
       await this.app.vault.modify(file, lines.join('\n'));
@@ -740,7 +805,7 @@ export class SyncEngine {
         parentId: null,
         filePath,
         lineNumber,
-        contentHash: '',
+        contentHash: generateContentHash(parsed),
         lastSynced: Date.now(),
         obsidianCompleted: false,
         todoistCompleted: false,

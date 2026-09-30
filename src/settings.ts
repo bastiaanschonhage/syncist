@@ -155,6 +155,19 @@ export class TodoistSyncSettingTab extends PluginSettingTab {
           });
       });
 
+    // Shorthand Setting
+    new Setting(containerEl)
+      .setName('Shorthand priorities and dates')
+      .setDesc('Recognize p1–p4 as priority and today, tomorrow, dd/mm, dd/mm/yy or dd/mm/yyyy as due date. They are converted to the emoji format on sync.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.parseShorthand)
+          .onChange(async (value) => {
+            this.plugin.settings.parseShorthand = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
     // Manual Sync Section
     new Setting(containerEl).setName('Manual actions').setHeading();
 
