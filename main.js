@@ -120,6 +120,12 @@ var TodoistSyncSettingTab = class extends import_obsidian.PluginSettingTab {
         await this.plugin.saveSettings();
       });
     });
+    new import_obsidian.Setting(containerEl).setName("Shorthand priorities and dates").setDesc("Recognize p1\u2013p4 as priority and today, tomorrow, dd/mm, dd/mm/yy or dd/mm/yyyy as due date. They are converted to the emoji format on sync.").addToggle(
+      (toggle) => toggle.setValue(this.plugin.settings.parseShorthand).onChange(async (value) => {
+        this.plugin.settings.parseShorthand = value;
+        await this.plugin.saveSettings();
+      })
+    );
     new import_obsidian.Setting(containerEl).setName("Manual actions").setHeading();
     new import_obsidian.Setting(containerEl).setName("Sync now").setDesc("Manually trigger a sync.").addButton((button) => {
       button.setButtonText("Sync now").setCta().onClick(async () => {
@@ -198,7 +204,8 @@ var DEFAULT_SETTINGS = {
   syncTag: "#todoist",
   defaultProjectId: "",
   syncIntervalMinutes: 5,
-  conflictResolution: "todoist-wins"
+  conflictResolution: "todoist-wins",
+  parseShorthand: true
 };
 function normalizeTask(raw) {
   var _a;
@@ -535,8 +542,107 @@ var PATTERNS = {
   // Alternative text-based due date: due:YYYY-MM-DD
   textDueDate: /due:(\d{4}-\d{2}-\d{2})/i,
   // Project metadata: 📁 ProjectName
-  project: new RegExp("\u{1F4C1}\\s*([^\\s#\u{1F4C5}\u{1F53A}\u23EB\u{1F53C}\u{1F53D}<]+)", "u")
+  project: new RegExp("\u{1F4C1}\\s*([^\\s#\u{1F4C5}\u{1F53A}\u23EB\u{1F53C}\u{1F53D}<]+)", "u"),
+  // Any priority emoji (used when a shorthand priority replaces it)
+  anyPriorityEmoji: /[ \t]*(🔺|⏫|🔼|🔽)/gu
 };
+var shorthandPriorityRegex = () => /(^|\s)p([1-4])(?=\s|$)/gi;
+var shorthandDateRegex = () => /(^|\s)(today|tomorrow|\d{1,2}\/\d{1,2}(?:\/\d{2}(?:\d{2})?)?)(?=\s|$)/gi;
+var emojiDueDateRegex = () => /[ \t]*(?:📅\s*|due:)\d{4}-\d{2}-\d{2}/giu;
+function findActivePriority(text) {
+  const regex = shorthandPriorityRegex();
+  let last = null;
+  let match;
+  while ((match = regex.exec(text)) !== null)
+    last = match;
+  if (!last)
+    return null;
+  const start = last.index;
+  if (lastMatchIndex(text, PATTERNS.anyPriorityEmoji) > start)
+    return null;
+  return {
+    start,
+    end: start + last[0].length,
+    leading: last[1],
+    // p1 → 4 (urgent) … p4 → 1 (normal), matching the Todoist API values
+    value: 5 - parseInt(last[2], 10)
+  };
+}
+function findActiveDate(text, today = /* @__PURE__ */ new Date()) {
+  const regex = shorthandDateRegex();
+  let active = null;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const date = resolveShorthandDate(match[2], today);
+    if (date) {
+      active = { start: match.index, end: match.index + match[0].length, leading: match[1], value: date };
+    }
+  }
+  if (!active)
+    return null;
+  if (lastMatchIndex(text, emojiDueDateRegex()) > active.start)
+    return null;
+  return active;
+}
+function lastMatchIndex(text, regex) {
+  regex.lastIndex = 0;
+  let index = -1;
+  let match;
+  while ((match = regex.exec(text)) !== null)
+    index = match.index;
+  regex.lastIndex = 0;
+  return index;
+}
+function resolveShorthandDate(token, today) {
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const word = token.toLowerCase();
+  if (word === "today")
+    return formatLocalDate(startOfToday);
+  if (word === "tomorrow") {
+    return formatLocalDate(new Date(startOfToday.getFullYear(), startOfToday.getMonth(), startOfToday.getDate() + 1));
+  }
+  const [dayPart, monthPart, yearPart] = token.split("/");
+  const day = parseInt(dayPart, 10);
+  const month = parseInt(monthPart, 10);
+  let year;
+  if (yearPart === void 0) {
+    year = startOfToday.getFullYear();
+    if (new Date(year, month - 1, day) < startOfToday)
+      year++;
+  } else {
+    year = parseInt(yearPart, 10) + (yearPart.length === 2 ? 2e3 : 0);
+  }
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    return null;
+  }
+  return formatLocalDate(date);
+}
+function formatLocalDate(date) {
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${mm}-${dd}`;
+}
+function replaceMatch(text, match, replacement) {
+  const insert = replacement ? `${match.leading}${replacement}` : "";
+  return text.slice(0, match.start) + insert + text.slice(match.end);
+}
+function findShorthandSpans(line, today = /* @__PURE__ */ new Date()) {
+  const spans = [];
+  const priority = findActivePriority(line);
+  if (priority) {
+    spans.push({
+      start: priority.start + priority.leading.length,
+      end: priority.end,
+      label: `Priority p${5 - priority.value}`
+    });
+  }
+  const date = findActiveDate(line, today);
+  if (date) {
+    spans.push({ start: date.start + date.leading.length, end: date.end, label: `Due ${date.value}` });
+  }
+  return spans.sort((x, y) => x.start - y.start);
+}
 function getIndentLevel(line) {
   var _a, _b;
   const leading = (_b = (_a = line.match(/^(\s*)/)) == null ? void 0 : _a[1]) != null ? _b : "";
@@ -559,7 +665,7 @@ function getIndentLevel(line) {
   }
   return level;
 }
-function parseTaskLine(line, lineNumber, filePath, syncTag, lastModified, requireSyncTag = true) {
+function parseTaskLine(line, lineNumber, filePath, syncTag, lastModified, requireSyncTag = true, parseShorthand = true) {
   const match = line.match(PATTERNS.task);
   if (!match)
     return null;
@@ -572,10 +678,10 @@ function parseTaskLine(line, lineNumber, filePath, syncTag, lastModified, requir
   }
   const todoistIdMatch = taskContent.match(PATTERNS.todoistId);
   const todoistId = todoistIdMatch ? todoistIdMatch[1] : null;
-  const dueDate = extractDueDate(taskContent);
-  const priority = extractPriority(taskContent);
+  const dueDate = extractDueDate(taskContent, parseShorthand);
+  const priority = extractPriority(taskContent, parseShorthand);
   const labels = extractLabels(taskContent, syncTag);
-  const content = cleanTaskContent(taskContent, syncTag);
+  const content = cleanTaskContent(taskContent, syncTag, parseShorthand);
   const indentLevel = getIndentLevel(line);
   const projectName = extractProjectName(taskContent);
   return {
@@ -600,7 +706,12 @@ function extractProjectName(content) {
   const match = content.match(PATTERNS.project);
   return match ? match[1] : null;
 }
-function extractDueDate(content) {
+function extractDueDate(content, parseShorthand) {
+  if (parseShorthand) {
+    const shorthand = findActiveDate(content);
+    if (shorthand)
+      return shorthand.value;
+  }
   const emojiMatch = content.match(PATTERNS.dueDate);
   if (emojiMatch)
     return emojiMatch[1];
@@ -612,7 +723,12 @@ function extractDueDate(content) {
     return textMatch[1];
   return null;
 }
-function extractPriority(content) {
+function extractPriority(content, parseShorthand) {
+  if (parseShorthand) {
+    const shorthand = findActivePriority(content);
+    if (shorthand)
+      return shorthand.value;
+  }
   if (PATTERNS.urgentPriority.test(content)) {
     return 4 /* HIGH */;
   }
@@ -640,8 +756,16 @@ function extractLabels(content, syncTag) {
   PATTERNS.hashtag.lastIndex = 0;
   return labels;
 }
-function cleanTaskContent(content, syncTag) {
+function cleanTaskContent(content, syncTag, parseShorthand) {
   let cleaned = content;
+  if (parseShorthand) {
+    const priority = findActivePriority(cleaned);
+    if (priority)
+      cleaned = replaceMatch(cleaned, priority, "");
+    const date = findActiveDate(cleaned);
+    if (date)
+      cleaned = replaceMatch(cleaned, date, "");
+  }
   cleaned = cleaned.replace(/<!--\s*todoist-id:\s*[\w]+\s*-->/g, "");
   const syncTagPattern = new RegExp(escapeRegex(syncTag), "gi");
   cleaned = cleaned.replace(syncTagPattern, "");
@@ -681,6 +805,8 @@ function buildTaskLine(task, syncTag) {
     line += " \u23EB";
   } else if (task.priority === 2 /* LOW */) {
     line += " \u{1F53C}";
+  } else if (findActivePriority(task.content)) {
+    line += " \u{1F53D}";
   }
   if (task.dueDate) {
     line += ` \u{1F4C5} ${task.dueDate}`;
@@ -689,6 +815,24 @@ function buildTaskLine(task, syncTag) {
     line += ` <!-- todoist-id:${task.todoistId} -->`;
   }
   return line;
+}
+function normalizeShorthand(line, today = /* @__PURE__ */ new Date()) {
+  let result = line;
+  if (findActivePriority(result)) {
+    result = result.replace(PATTERNS.anyPriorityEmoji, "");
+    const priority = findActivePriority(result);
+    if (priority) {
+      const emoji = priorityToEmoji(priority.value) || "\u{1F53D}";
+      result = replaceMatch(result, priority, emoji);
+    }
+  }
+  if (findActiveDate(result, today)) {
+    result = result.replace(emojiDueDateRegex(), "");
+    const date = findActiveDate(result, today);
+    if (date)
+      result = replaceMatch(result, date, `\u{1F4C5} ${date.value}`);
+  }
+  return result;
 }
 function addTodoistIdToLine(line, todoistId) {
   var _a, _b;
@@ -705,14 +849,14 @@ function updateTaskCompletion(line, isCompleted) {
     return line.replace(/\[[xX]\]/, "[ ]");
   }
 }
-function parseTasksFromContent(content, filePath, syncTag, lastModified) {
+function parseTasksFromContent(content, filePath, syncTag, lastModified, parseShorthand = true) {
   const lines = content.split("\n");
   const tasks = [];
   const parentStack = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const lineIndent = getIndentLevel(line);
-    let task = parseTaskLine(line, i, filePath, syncTag, lastModified, true);
+    let task = parseTaskLine(line, i, filePath, syncTag, lastModified, true, parseShorthand);
     if (task) {
       while (parentStack.length > 0 && parentStack[parentStack.length - 1].indentLevel >= lineIndent) {
         parentStack.pop();
@@ -732,7 +876,7 @@ function parseTasksFromContent(content, filePath, syncTag, lastModified) {
         parentStack.pop();
       }
       if (parentStack.length > 0) {
-        task = parseTaskLine(line, i, filePath, syncTag, lastModified, false);
+        task = parseTaskLine(line, i, filePath, syncTag, lastModified, false, parseShorthand);
         if (task) {
           const parent = parentStack[parentStack.length - 1].task;
           task.parentId = parent.todoistId;
@@ -784,6 +928,18 @@ function generateContentHash(task) {
   }
   return hash.toString(16);
 }
+function priorityToEmoji(priority) {
+  switch (priority) {
+    case 4 /* HIGH */:
+      return "\u{1F53A}";
+    case 3 /* MEDIUM */:
+      return "\u23EB";
+    case 2 /* LOW */:
+      return "\u{1F53C}";
+    default:
+      return "";
+  }
+}
 
 // src/sync-engine.ts
 var SyncEngine = class {
@@ -816,23 +972,6 @@ var SyncEngine = class {
         return null;
     }
     return (_a = this.todoistService.getProjectName(projectId)) != null ? _a : null;
-  }
-  /**
-   * Build a Todoist task description with a clickable source link back to the
-   * Obsidian note. The link uses the obsidian:// URI scheme so clicking in
-   * Todoist opens the note directly in the Obsidian app.
-   */
-  buildDescriptionWithSource(filePath, existingDescription) {
-    const noteRef = filePath.replace(/\.md$/i, "");
-    const vault = encodeURIComponent(this.app.vault.getName());
-    const file = encodeURIComponent(noteRef);
-    const sourceLine = `Source: [${noteRef}](obsidian://open?vault=${vault}&file=${file})`;
-    if (existingDescription && existingDescription.trim().length > 0) {
-      return `${sourceLine}
-
-${existingDescription}`;
-    }
-    return sourceLine;
   }
   getSyncState() {
     return this.syncState;
@@ -875,6 +1014,9 @@ ${existingDescription}`;
       console.debug("Todoist Sync: Scanning vault for tasks...");
       const obsidianTasks = await this.getAllObsidianTasks();
       console.debug(`Todoist Sync: Found ${obsidianTasks.length} tasks with ${this.settings.syncTag} tag`);
+      if (this.settings.parseShorthand) {
+        await this.normalizeShorthandLines(obsidianTasks);
+      }
       const syncedObsidianTasks = /* @__PURE__ */ new Map();
       const newObsidianTasks = [];
       for (const task of obsidianTasks) {
@@ -988,7 +1130,8 @@ ${existingDescription}`;
           content,
           file.path,
           this.settings.syncTag,
-          file.stat.mtime
+          file.stat.mtime,
+          this.settings.parseShorthand
         );
         tasks.push(...fileTasks);
       } catch (error) {
@@ -997,6 +1140,45 @@ ${existingDescription}`;
     }
     console.debug(`Todoist Sync: Scan complete \u2014 ${files.length} files, ${tasks.length} tasks found`);
     return tasks;
+  }
+  /**
+   * Rewrite shorthand metadata (p1, today, dd/mm, …) in task lines to the
+   * emoji format. The parsed tasks already hold the resolved values; this
+   * pins them in the note so relative dates don't shift on later syncs.
+   */
+  async normalizeShorthandLines(tasks) {
+    var _a;
+    const tasksByFile = /* @__PURE__ */ new Map();
+    for (const task of tasks) {
+      if (normalizeShorthand(task.originalLine) === task.originalLine)
+        continue;
+      const fileTasks = (_a = tasksByFile.get(task.filePath)) != null ? _a : [];
+      fileTasks.push(task);
+      tasksByFile.set(task.filePath, fileTasks);
+    }
+    for (const [filePath, fileTasks] of tasksByFile) {
+      const file = this.app.vault.getAbstractFileByPath(filePath);
+      if (!(file instanceof import_obsidian3.TFile))
+        continue;
+      try {
+        const content = await this.app.vault.read(file);
+        const lines = content.split("\n");
+        let changed = false;
+        for (const task of fileTasks) {
+          if (lines[task.lineNumber] !== task.originalLine)
+            continue;
+          const normalized = normalizeShorthand(task.originalLine);
+          lines[task.lineNumber] = normalized;
+          task.originalLine = normalized;
+          changed = true;
+        }
+        if (changed) {
+          await this.app.vault.modify(file, lines.join("\n"));
+        }
+      } catch (error) {
+        console.error(`Todoist Sync: Failed to normalize shorthand in ${filePath}:`, error);
+      }
+    }
   }
   /**
    * Create a Todoist task from an Obsidian task, with optional parentId
@@ -1009,7 +1191,6 @@ ${existingDescription}`;
       if (resolvedId)
         projectId = resolvedId;
     }
-    const description = this.buildDescriptionWithSource(task.filePath, task.description);
     const todoistTask = await this.todoistService.createTask(task.content, {
       projectId: parentId ? void 0 : projectId,
       // Subtasks inherit project from parent
@@ -1017,7 +1198,7 @@ ${existingDescription}`;
       priority: task.priority,
       dueDate: (_a = task.dueDate) != null ? _a : void 0,
       labels: task.labels,
-      description
+      description: task.description
     });
     await this.updateObsidianTaskLine(task, (line) => addTodoistIdToLine(line, todoistTask.id));
     this.syncState.tasks[todoistTask.id] = {
@@ -1302,7 +1483,7 @@ ${existingDescription}`;
    * Create a Todoist task from the current editor line
    */
   async createTaskFromLine(filePath, lineNumber, lineContent) {
-    var _a, _b;
+    var _a, _b, _c, _d;
     if (!this.todoistService.isInitialized()) {
       return { success: false, message: "Todoist API not configured. Please add your API key in settings." };
     }
@@ -1334,12 +1515,30 @@ ${existingDescription}`;
       content = cleanedContent + " " + this.settings.syncTag;
       prefix = (_b = (_a = lineContent.match(/^(\s*)/)) == null ? void 0 : _a[1]) != null ? _b : "";
     }
-    const cleanContent = content.replace(new RegExp(this.settings.syncTag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "").replace(/#[a-zA-Z0-9_-]+/g, "").replace(/📅\s*\d{4}-\d{2}-\d{2}/g, "").replace(/🔺|⏫|🔼|🔽/g, "").replace(/📁\s*\S+/g, "").replace(/\s+/g, " ").trim();
+    const parsed = parseTaskLine(
+      `- [ ] ${content}`,
+      lineNumber,
+      filePath,
+      this.settings.syncTag,
+      Date.now(),
+      false,
+      this.settings.parseShorthand
+    );
+    if (!parsed || !parsed.content) {
+      return { success: false, message: "Cannot create task without a title." };
+    }
+    const cleanContent = parsed.content;
     try {
-      const description = this.buildDescriptionWithSource(filePath, "");
+      let projectId = this.settings.defaultProjectId || void 0;
+      if (parsed.projectName) {
+        await this.todoistService.ensureProjectCache();
+        projectId = (_c = this.todoistService.getProjectIdByName(parsed.projectName)) != null ? _c : projectId;
+      }
       const todoistTask = await this.todoistService.createTask(cleanContent, {
-        projectId: this.settings.defaultProjectId || void 0,
-        description
+        projectId,
+        priority: parsed.priority,
+        dueDate: (_d = parsed.dueDate) != null ? _d : void 0,
+        labels: parsed.labels
       });
       const file = this.app.vault.getAbstractFileByPath(filePath);
       if (!(file instanceof import_obsidian3.TFile)) {
@@ -1356,6 +1555,9 @@ ${existingDescription}`;
       } else {
         newLine = `${prefix}- [ ] ${content} <!-- todoist-id:${todoistTask.id} -->`;
       }
+      if (this.settings.parseShorthand) {
+        newLine = normalizeShorthand(newLine);
+      }
       lines[lineNumber] = newLine;
       await this.app.vault.modify(file, lines.join("\n"));
       this.syncState.tasks[todoistTask.id] = {
@@ -1363,7 +1565,7 @@ ${existingDescription}`;
         parentId: null,
         filePath,
         lineNumber,
-        contentHash: "",
+        contentHash: generateContentHash(parsed),
         lastSynced: Date.now(),
         obsidianCompleted: false,
         todoistCompleted: false,
@@ -1607,6 +1809,52 @@ function renderQueryBlock(source, el, plugin) {
   void loadTasks();
 }
 
+// src/shorthand-highlighter.ts
+var import_state = require("@codemirror/state");
+var import_view = require("@codemirror/view");
+function shorthandHighlighter(getSettings) {
+  return import_view.ViewPlugin.fromClass(
+    class {
+      constructor(view) {
+        this.settingsKey = currentSettingsKey(getSettings());
+        this.decorations = buildDecorations(view, getSettings());
+      }
+      update(update) {
+        const settingsKey = currentSettingsKey(getSettings());
+        if (update.docChanged || settingsKey !== this.settingsKey) {
+          this.settingsKey = settingsKey;
+          this.decorations = buildDecorations(update.view, getSettings());
+        }
+      }
+    },
+    { decorations: (plugin) => plugin.decorations }
+  );
+}
+function currentSettingsKey(settings) {
+  return `${settings.parseShorthand}|${settings.syncTag}`;
+}
+function buildDecorations(view, settings) {
+  const builder = new import_state.RangeSetBuilder();
+  if (!settings.parseShorthand)
+    return builder.finish();
+  const doc = view.state.doc;
+  const tasks = parseTasksFromContent(doc.toString(), "", settings.syncTag, 0);
+  for (const task of tasks) {
+    const line = doc.line(task.lineNumber + 1);
+    for (const span of findShorthandSpans(line.text)) {
+      builder.add(
+        line.from + span.start,
+        line.from + span.end,
+        import_view.Decoration.mark({
+          class: "syncist-shorthand",
+          attributes: { title: `Syncist: ${span.label}` }
+        })
+      );
+    }
+  }
+  return builder.finish();
+}
+
 // src/main.ts
 var TodoistSyncPlugin = class extends import_obsidian6.Plugin {
   constructor() {
@@ -1635,6 +1883,7 @@ var TodoistSyncPlugin = class extends import_obsidian6.Plugin {
     this.registerMarkdownCodeBlockProcessor("syncist", (source, el) => {
       renderQueryBlock(source, el, this);
     });
+    this.registerEditorExtension(shorthandHighlighter(() => this.settings));
     this.startSyncInterval();
     console.debug("Syncist plugin loaded");
   }

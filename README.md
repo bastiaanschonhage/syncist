@@ -7,6 +7,17 @@ With this plugin it is possible to create `Todoist` tasks from `Obsidian` and ke
 Its usage is very simple after the plugin has been connected to your Todoist account.
 When you add the `#todoist` tag to a task (or checkbox item) it will automatically be created on Todoist and from that moment onward, the Todoist and Obsidian task will be synced.
 
+### What's New
+
+#### 2.3.0
+- **Shorthand priorities**: type `p1`, `p2`, `p3` or `p4` in a task to set its priority, just like in Todoist
+- **Shorthand due dates**: type `today`, `tomorrow`, `dd/mm`, `dd/mm/yy` or `dd/mm/yyyy` to set the due date
+- **Green highlighting** in the editor shows which shorthand will be converted; hover it to see the resulting priority or date
+- On sync, shorthand is converted to the emoji format (`🔺`, `📅 2026-10-01`), so `today` stays pinned to the day you wrote it
+- **Create task from current line** now also sends the priority, due date, labels and project to Todoist
+
+See [Shorthand Priorities and Dates](#shorthand-priorities-and-dates) for details.
+
 ### Features
 - **Bidirectional Sync**: Changes in Obsidian or Todoist are synced both ways
 - **Subtasks**: Indented tasks beneath a `#todoist` parent are synced as subtasks automatically — no tag needed on each child
