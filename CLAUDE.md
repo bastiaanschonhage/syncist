@@ -60,7 +60,7 @@ Use `/release` to run the full release workflow automatically.
 Manual steps (for reference):
 1. Commit any finished work first (the release must be built from committed source)
 2. Bump version in `manifest.json` and `package.json` (`npm pkg set version=X.Y.Z`)
-3. Add a `### X.Y.Z` entry to `## What's New` in `README.md` (minor/major releases)
+3. Add an `X.Y.Z` entry at the top of "What's New" in `README.md` (minor/major releases)
 4. `npm run build`
 5. Commit `manifest.json`, `package.json`, `main.js`, `README.md` and push (`package-lock.json` is gitignored)
 6. `gh release create X.Y.Z main.js manifest.json styles.css --title "X.Y.Z" --notes "..."` (no `v` prefix)
